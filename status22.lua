@@ -3,7 +3,7 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
--- Prevent duplicate script loops if re-executed
+-- Prevent duplicate script loops from stacking
 if _G.JujuTrackerRunning then
     _G.JujuTrackerRunning = false
     task.wait(1)
@@ -42,24 +42,23 @@ local function FormatNumber(val)
     return formatted
 end
 
--- Reads Cursed Crystals strictly from the Event Header Currency Label
+-- Reads Cursed Crystals strictly from the Event Shop Currency Header
 local function GetCursedCrystals()
     local result = nil
 
-    -- Target: Exact hierarchy (EventShopHeader -> Currency -> AmountLabel)
+    -- Primary Target: Exact path to EventShopHeader currency counter (107,514)
     pcall(function()
         local fullMenus = PlayerGui:FindFirstChild("FullMenus")
-        if not fullMenus then return end
-
-        for _, desc in ipairs(fullMenus:GetDescendants()) do
-            if desc:IsA("TextLabel") and desc.Name == "AmountLabel" then
-                local parent = desc.Parent
-                if parent and parent.Name == "Currency" then
-                    local grandParent = parent.Parent
-                    if grandParent and grandParent.Name == "EventShopHeader" then
-                        if desc.Text and desc.Text ~= "" then
-                            result = desc.Text
-                            return
+        if fullMenus then
+            local loveEvent = fullMenus:FindFirstChild("LoveEvent_FullMenu")
+            if loveEvent then
+                local header = loveEvent:FindFirstChild("EventShopHeader", true)
+                if header then
+                    local currency = header:FindFirstChild("Currency")
+                    if currency then
+                        local amountLabel = currency:FindFirstChild("AmountLabel")
+                        if amountLabel and amountLabel:IsA("TextLabel") and amountLabel.Text ~= "" then
+                            result = amountLabel.Text
                         end
                     end
                 end
@@ -71,16 +70,29 @@ local function GetCursedCrystals()
         return FormatNumber(result)
     end
 
-    -- Backup Target: Inventory slot with 5+ digit counts (x107,514)
+    -- Secondary Target: Look specifically inside the grid ScrollingFrame (ignoring right details frame)
     pcall(function()
         local inventory = PlayerGui.FullMenus:FindFirstChild("Inventory")
         if inventory then
-            for _, desc in ipairs(inventory:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Text:find("x%d") then
-                    local digitsOnly = desc.Text:gsub("[^%d]", "")
-                    local val = tonumber(digitsOnly)
-                    if val and val > 10000 then -- Target high stack values like 107,514
-                        result = desc.Text
+            local scrollFrame = inventory:FindFirstChild("ScrollingFrame", true)
+            if scrollFrame then
+                for _, slot in ipairs(scrollFrame:GetChildren()) do
+                    local hasCrystalName = false
+                    local slotQty = ""
+                    
+                    for _, child in ipairs(slot:GetDescendants()) do
+                        if child:IsA("TextLabel") then
+                            local t = child.Text:lower()
+                            if t:find("cursed crystal") then
+                                hasCrystalName = true
+                            elseif child.Text:find("x%d") then
+                                slotQty = child.Text
+                            end
+                        end
+                    end
+                    
+                    if hasCrystalName and slotQty ~= "" then
+                        result = slotQty
                         return
                     end
                 end
@@ -155,8 +167,8 @@ local function SendWebhook(yenVal, lumanVal, crystalVal)
     end)
 end
 
--- Main Loop
-print("[JujuZero Tracker v7 Loaded - Exact Header Target]")
+-- Execution Loop
+print("[JujuZero Tracker v8 Loaded - Strict Hierarchy Navigation]")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
