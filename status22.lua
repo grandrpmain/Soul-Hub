@@ -35,10 +35,32 @@ local function CleanText(str)
     return str
 end
 
--- Safe Cursed Crystal Reader
-local function GetCursedCrystals()
-    -- Priority 1: Safe UI Inventory Scanner
-    local uiSuccess, uiResult = pcall(function()
+-- Auto-Open Inventory / Supplies Frames in UI
+local function EnsureSuppliesOpen()
+    pcall(function()
+        for _, gui in ipairs(PlayerGui:GetChildren()) do
+            if gui:IsA("ScreenGui") then
+                for _, obj in ipairs(gui:GetDescendants()) do
+                    if obj:IsA("GuiObject") then
+                        local n = obj.Name:lower()
+                        if n:find("supplies") or n:find("inventory") or n:find("all items") then
+                            obj.Visible = true
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- Direct UI Inventory Slot Reader (Zero GC Memory Scanning)
+local function GetCursedCrystalsFromUI()
+    EnsureSuppliesOpen()
+
+    local resultAmount = nil
+
+    pcall(function()
+        -- Scan every TextLabel in PlayerGui for item quantities (e.g. x107,514)
         for _, desc in ipairs(PlayerGui:GetDescendants()) do
             if desc:IsA("TextLabel") and desc.Text:find("x%d") then
                 local cleanStr = desc.Text:gsub("x", ""):gsub(",", ""):gsub("%s+", "")
@@ -46,66 +68,60 @@ local function GetCursedCrystals()
 
                 if val and val > 0 then
                     local container = desc.Parent
+                    
+                    -- Check container and ancestors up 4 levels for Cursed Crystal identifiers
                     for level = 1, 4 do
                         if not container or container == PlayerGui then break end
 
+                        local isMatch = false
                         for _, child in ipairs(container:GetDescendants()) do
-                            local match = false
                             if child:IsA("TextLabel") then
                                 local t = child.Text:lower()
-                                if t:find("cursed") or t:find("crystal") then match = true end
+                                if t:find("cursed") or t:find("crystal") then
+                                    isMatch = true
+                                    break
+                                end
                             elseif child:IsA("ImageLabel") or child:IsA("ImageButton") then
                                 local img = (child.Image or ""):lower()
-                                local n = child.Name:lower()
-                                if n:find("cursed") or n:find("crystal") or img:find("crystal") then match = true end
+                                local cn = child.Name:lower()
+                                if cn:find("cursed") or cn:find("crystal") or img:find("crystal") then
+                                    isMatch = true
+                                    break
+                                end
                             end
+                        end
 
-                            if match then
-                                return FormatNumber(val)
-                            end
+                        if isMatch then
+                            resultAmount = FormatNumber(val)
+                            return
                         end
                         container = container.Parent
                     end
                 end
             end
         end
-        return nil
     end)
 
-    if uiSuccess and uiResult then
-        return uiResult
-    end
+    if resultAmount then return resultAmount end
 
-    -- Priority 2: Safe Memory GC Scanner (Protected against Sleitnick Signal crashes)
-    local targetCount = 0
-
-    for _, tbl in ipairs(getgc(true)) do
-        if type(tbl) == "table" then
-            pcall(function()
-                -- Skip metatable objects like Sleitnick signals that throw indexing errors
-                local mt = getmetatable(tbl)
-                if mt then return end
-
-                local key = rawget(tbl, 1)
-                if key == "CursedCrystal" then
-                    local count = tonumber(rawget(tbl, 2)) or 0
-                    -- Target inventory stack count (~100k) while excluding stat pools (>1M)
-                    if count > targetCount and count < 1000000 then
-                        targetCount = count
-                    end
+    -- Secondary UI fallback: Check for active slot detail panel
+    pcall(function()
+        for _, desc in ipairs(PlayerGui:GetDescendants()) do
+            if desc:IsA("TextLabel") and desc.Text:find("x%d") then
+                local cleanStr = desc.Text:gsub("x", ""):gsub(",", ""):gsub("%s+", "")
+                local val = tonumber(cleanStr)
+                -- Match typical inventory crystal stack range
+                if val and val > 50000 and val < 500000 then
+                    resultAmount = FormatNumber(val)
                 end
-            end)
+            end
         end
-    end
+    end)
 
-    if targetCount > 0 then
-        return FormatNumber(targetCount)
-    end
-
-    return "N/A"
+    return resultAmount or "N/A"
 end
 
--- Read HUD Currencies
+-- Read Yen and Luman from HUD Labels
 local function GetHUDCurrencies()
     local yenText, lumanText = "N/A", "N/A"
     local hud = PlayerGui:FindFirstChild("HUD")
@@ -129,7 +145,7 @@ local function GetHUDCurrencies()
     return yenText, lumanText
 end
 
--- Send Webhook
+-- Send Discord Webhook Payload
 local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
     local payload = {
         ["username"] = "Jujutsu Zero Tracker",
@@ -158,15 +174,15 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
     })
 end
 
--- Loop
-print("[JujuZero Tracker]: Protected scanner initialized.")
+-- Monitor Loop
+print("[JujuZero Tracker]: UI-Direct Inventory Reader Initialized.")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
 
     while true do
         local yen, luman = GetHUDCurrencies()
-        local crystal = GetCursedCrystals()
+        local crystal = GetCursedCrystalsFromUI()
 
         if yen ~= lastYen or luman ~= lastLuman or crystal ~= lastCrystal then
             lastYen, lastLuman, lastCrystal = yen, luman, crystal
