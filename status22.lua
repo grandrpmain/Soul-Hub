@@ -3,6 +3,13 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
+-- Prevent duplicate script loops if re-executed
+if _G.JujuTrackerRunning then
+    _G.JujuTrackerRunning = false
+    task.wait(1)
+end
+_G.JujuTrackerRunning = true
+
 local WebhookUrl = "https://discord.com/api/webhooks/1539304499276157049/3UZcBF9rcVH8VeYchanLmBehhx1yTnl7stH71gcB8fJibUJ5RMdfNkxudM9XjH3Ms3a5"
 local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
 
@@ -11,7 +18,7 @@ if not httpRequest then
     return
 end
 
--- Bulletproof Number Formatter
+-- Safe Single-Value Number Formatter
 local function FormatNumber(val)
     if not val then return "N/A" end
     local str = tostring(val)
@@ -35,20 +42,25 @@ local function FormatNumber(val)
     return formatted
 end
 
--- Reads Cursed Crystals specifically
+-- Reads Cursed Crystals strictly from the Event Header Currency Label
 local function GetCursedCrystals()
     local result = nil
 
-    -- Target 1: LoveEvent Header AmountLabel (Diagnostic Match #7)
+    -- Target: Exact hierarchy (EventShopHeader -> Currency -> AmountLabel)
     pcall(function()
         local fullMenus = PlayerGui:FindFirstChild("FullMenus")
-        if fullMenus then
-            local loveEvent = fullMenus:FindFirstChild("LoveEvent_FullMenu")
-            if loveEvent then
-                for _, desc in ipairs(loveEvent:GetDescendants()) do
-                    if desc:IsA("TextLabel") and desc.Name == "AmountLabel" and desc.Text ~= "" then
-                        result = desc.Text
-                        return
+        if not fullMenus then return end
+
+        for _, desc in ipairs(fullMenus:GetDescendants()) do
+            if desc:IsA("TextLabel") and desc.Name == "AmountLabel" then
+                local parent = desc.Parent
+                if parent and parent.Name == "Currency" then
+                    local grandParent = parent.Parent
+                    if grandParent and grandParent.Name == "EventShopHeader" then
+                        if desc.Text and desc.Text ~= "" then
+                            result = desc.Text
+                            return
+                        end
                     end
                 end
             end
@@ -59,29 +71,17 @@ local function GetCursedCrystals()
         return FormatNumber(result)
     end
 
-    -- Target 2: Precise Inventory Search (Matches Cursed Crystal item slot specifically)
+    -- Backup Target: Inventory slot with 5+ digit counts (x107,514)
     pcall(function()
         local inventory = PlayerGui.FullMenus:FindFirstChild("Inventory")
         if inventory then
-            for _, slot in ipairs(inventory:GetDescendants()) do
-                -- Verify if slot is associated with "Cursed Crystal"
-                local isCrystal = false
-                for _, child in ipairs(slot:GetDescendants()) do
-                    if child:IsA("TextLabel") then
-                        local t = child.Text:lower()
-                        if t:find("cursed crystal") or t:find("crystal") then
-                            isCrystal = true
-                            break
-                        end
-                    end
-                end
-
-                if isCrystal then
-                    for _, child in ipairs(slot:GetDescendants()) do
-                        if child:IsA("TextLabel") and child.Text:find("x%d") then
-                            result = child.Text
-                            return
-                        end
+            for _, desc in ipairs(inventory:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Text:find("x%d") then
+                    local digitsOnly = desc.Text:gsub("[^%d]", "")
+                    local val = tonumber(digitsOnly)
+                    if val and val > 10000 then -- Target high stack values like 107,514
+                        result = desc.Text
+                        return
                     end
                 end
             end
@@ -155,13 +155,13 @@ local function SendWebhook(yenVal, lumanVal, crystalVal)
     end)
 end
 
--- Main Execution Loop
-print("[JujuZero Tracker v6 - Precise Crystal Target Loaded]")
+-- Main Loop
+print("[JujuZero Tracker v7 Loaded - Exact Header Target]")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
 
-    while true do
+    while _G.JujuTrackerRunning do
         local yen, luman = GetHUDCurrencies()
         local crystal = GetCursedCrystals()
 
