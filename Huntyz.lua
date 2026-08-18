@@ -116,7 +116,8 @@ end)
 -- 2. AUTOMATIC SKILL SPAMMER
 ---------------------------------------------------------
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
 
 local isSkillEnabled = false
 local skillThread = nil
@@ -130,19 +131,22 @@ local SKILL_KEYS = {
 	Enum.KeyCode.G
 }
 
--- Helper function to simulate a keypress
+-- Helper function to simulate keypresses (does not click GUI)
 local function pressKey(keyCode)
 	VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
 	task.wait(0.03)
 	VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
 end
 
--- Helper function to simulate M1 (Left Click) at current mouse position
-local function pressM1()
-	local mousePos = UserInputService:GetMouseLocation()
-	VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 0)
-	task.wait(0.03)
-	VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 0)
+-- Game-side M1 attack (Triggers weapon without clicking screen cursor)
+local function attackM1()
+	local character = player.Character
+	if character then
+		local tool = character:FindFirstChildOfClass("Tool")
+		if tool then
+			tool:Activate()
+		end
+	end
 end
 
 local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Multi-Skill Spammer", Default = false })
@@ -150,7 +154,7 @@ local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Multi-Skill Spammer"
 SkillToggle:OnChanged(function(Value)
 	isSkillEnabled = Value
 
-	-- Stop existing thread immediately if toggle state changes
+	-- Stop existing thread if running
 	if skillThread then
 		task.cancel(skillThread)
 		skillThread = nil
@@ -165,18 +169,18 @@ SkillToggle:OnChanged(function(Value)
 
 	skillThread = task.spawn(function()
 		while isSkillEnabled do
-			-- 1. Click M1 (Left Mouse Button)
-			pressM1()
+			-- 1. Clean M1 Attack (Game side only)
+			attackM1()
 			task.wait(0.05)
 
 			-- 2. Cycle through Z, X, C, V, G
 			for _, key in ipairs(SKILL_KEYS) do
 				if not isSkillEnabled then break end
 				pressKey(key)
-				task.wait(0.05) -- Delay between each keypress
+				task.wait(0.05)
 			end
 
-			task.wait(0.2) -- Delay before repeating the rotation
+			task.wait(0.2)
 		end
 	end)
 end)
