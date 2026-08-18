@@ -18,16 +18,28 @@ local Tabs = {
 }
 
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local isFarming = false -- Tracks toggle state
+local player = Players.LocalPlayer
+local ByteNetReliable = ReplicatedStorage:WaitForChild("ByteNetReliable")
+
+---------------------------------------------------------
+-- 1. DOOR & ZOMBIE AUTOFARM
+---------------------------------------------------------
+local isFarming = false
+local farmThread = nil
 
 local AutoFarmToggle = Tabs.Main:AddToggle("Door&Zombie", { Title = "Doors&Zombies", Default = false })
 
 AutoFarmToggle:OnChanged(function(Value)
-	isFarming = Value -- Update state
+	isFarming = Value
 
-	-- 1. IF TOGGLE IS OFF, STOP EVERYTHING IMMEDIATELY
+	-- Cancel any previously running farm thread immediately
+	if farmThread then
+		task.cancel(farmThread)
+		farmThread = nil
+	end
+
 	if not isFarming then 
 		print("[-] AutoFarm Disabled")
 		return 
@@ -35,18 +47,12 @@ AutoFarmToggle:OnChanged(function(Value)
 
 	print("[+] AutoFarm Started")
 
-	-- 2. RUN IN A SEPARATE THREAD SO UI DOESN'T FREEZE
-	task.spawn(function()
+	farmThread = task.spawn(function()
 		local doorsFolder = workspace:FindFirstChild("School") and workspace.School:FindFirstChild("Doors")
 
-		---------------------------------------------------------
 		-- STEP 1: CYCLE THROUGH ALL DOORS
-		---------------------------------------------------------
 		if doorsFolder then
 			for i, door in ipairs(doorsFolder:GetChildren()) do
-				-- Stop mid-loop if player turns toggle OFF
-				if not isFarming then break end
-
 				local character = player.Character or player.CharacterAdded:Wait()
 				local hrp = character:WaitForChild("HumanoidRootPart")
 
@@ -67,13 +73,11 @@ AutoFarmToggle:OnChanged(function(Value)
 					print(string.format("[%d/%d] TP'd to door: %s", i, #doorsFolder:GetChildren(), door.Name))
 				end
 
-				task.wait(1.5) -- Time at each door
+				task.wait(1.5)
 			end
 		end
 
-		---------------------------------------------------------
-		-- STEP 2: FARM ZOMBIES CONTINUOUSLY WHILE TOGGLE IS ON
-		---------------------------------------------------------
+		-- STEP 2: FARM ZOMBIES CONTINUOUSLY
 		while isFarming do
 			local character = player.Character or player.CharacterAdded:Wait()
 			local playerPos = character:GetPivot().Position
@@ -81,7 +85,7 @@ AutoFarmToggle:OnChanged(function(Value)
 			local closestPart = nil
 			local shortestDistance = math.huge
 
-			-- Search for the nearest Zombie
+			-- Find nearest Zombie
 			for _, obj in ipairs(workspace:GetDescendants()) do
 				if obj:IsA("BasePart") then
 					local entityTeam = obj:GetAttribute("EntityTeam")
@@ -95,24 +99,25 @@ AutoFarmToggle:OnChanged(function(Value)
 				end
 			end
 
-			-- Teleport to closest Zombie
-			if closestPart and isFarming then
+			-- Teleport to Zombie
+			if closestPart then
 				local targetCFrame = closestPart.CFrame * CFrame.new(0, -3, 3)
 				character:PivotTo(targetCFrame)
 				print("Teleported to Zombie:", closestPart:GetAttribute("EntityVariant") or "Basic")
 			end
 
-			task.wait(1) -- Delay between zombie scans
+			task.wait(1)
 		end
 	end)
 end)
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local ByteNetReliable = ReplicatedStorage:WaitForChild("ByteNetReliable")
 
+---------------------------------------------------------
+-- 2. AUTOMATIC SKILL SPAMMER
+---------------------------------------------------------
 local isSkillEnabled = false
+local skillThread = nil
 
--- Function to construct and send the ByteNet skill packet
 local function useSkill()
 	local rawBytes = { 18, 1, 215, 49, 56, 253, 57, 161, 218, 65 }
 	local b = buffer.create(#rawBytes)
@@ -124,22 +129,28 @@ local function useSkill()
 	ByteNetReliable:FireServer(b, nil)
 end
 
--- Toggle Setup
 local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Skill", Default = false })
 
 SkillToggle:OnChanged(function(Value)
 	isSkillEnabled = Value
 
-	-- Stop immediately if toggled off
+	-- Cancel any running skill thread immediately
+	if skillThread then
+		task.cancel(skillThread)
+		skillThread = nil
+	end
+
 	if not isSkillEnabled then 
+		print("[-] Skill Disabled")
 		return 
 	end
 
-	-- Run in a thread so UI doesn't freeze
-	task.spawn(function()
+	print("[+] Skill Started")
+
+	skillThread = task.spawn(function()
 		while isSkillEnabled do
 			useSkill()
-			task.wait(0.2) -- Delay between skill uses (adjust if skill has a cooldown)
+			task.wait(0.2)
 		end
 	end)
 end)
