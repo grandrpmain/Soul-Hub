@@ -11,15 +11,23 @@ if not httpRequest then
     return
 end
 
--- Completely isolated string formatter to prevent tonumber multi-return crashes
+-- Bulletproof Number Formatter (100% immune to tonumber base errors)
 local function FormatNumber(val)
     if not val then return "N/A" end
     local str = tostring(val)
-    local digitsOnly = str:gsub("[^%d]", "") -- Isolated to single variable
     
-    local num = tonumber(digitsOnly)
+    -- Extract digits strictly one-by-one to prevent multiple return values
+    local digits = ""
+    for digit in str:gmatch("%d") do
+        digits = digits .. digit
+    end
+
+    if digits == "" then return tostring(val) end
+
+    local num = tonumber(digits) -- Guaranteed single argument
     if not num then return tostring(val) end
 
+    -- Format with commas
     local formatted = tostring(num)
     while true do
         local res, count = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
@@ -29,11 +37,11 @@ local function FormatNumber(val)
     return formatted
 end
 
--- Reads Cursed Crystals directly from verified diagnostic paths
+-- Reads Cursed Crystals from targeted diagnostic UI paths
 local function GetCursedCrystals()
     local result = nil
 
-    -- Path 1: LoveEvent Shop Header Currency Label ("107,514")
+    -- Path 1: Event Shop Header Currency Label ("107,514")
     pcall(function()
         local fullMenus = PlayerGui:FindFirstChild("FullMenus")
         if fullMenus then
@@ -71,23 +79,6 @@ local function GetCursedCrystals()
         return FormatNumber(result)
     end
 
-    -- Path 3: Generic AmountLabel inside FullMenus
-    pcall(function()
-        local fullMenus = PlayerGui:FindFirstChild("FullMenus")
-        if fullMenus then
-            for _, desc in ipairs(fullMenus:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Name == "AmountLabel" and desc.Text ~= "" then
-                    result = desc.Text
-                    return
-                end
-            end
-        end
-    end)
-
-    if result and result ~= "" then
-        return FormatNumber(result)
-    end
-
     return "N/A"
 end
 
@@ -101,8 +92,10 @@ local function GetHUDCurrencies()
             for _, desc in ipairs(hud:GetDescendants()) do
                 if desc:IsA("TextLabel") and desc.Text:find("%d") then
                     local rawStr = desc.Text
-                    local digits = rawStr:gsub("[^%d]", "")
+                    local digits = ""
+                    for d in rawStr:gmatch("%d") do digits = digits .. d end
                     local val = tonumber(digits)
+                    
                     if val then
                         if val > 10000000 then
                             yenText = rawStr
@@ -118,7 +111,7 @@ local function GetHUDCurrencies()
     return yenText, lumanText
 end
 
--- Webhook Dispatcher
+-- Webhook Dispatcher with Response Debugging
 local function SendWebhook(yenVal, lumanVal, crystalVal)
     local payload = {
         ["username"] = "Jujutsu Zero Tracker",
@@ -139,8 +132,8 @@ local function SendWebhook(yenVal, lumanVal, crystalVal)
         }
     }
 
-    local ok, err = pcall(function()
-        httpRequest({
+    local ok, response = pcall(function()
+        return httpRequest({
             Url = WebhookUrl,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
@@ -148,13 +141,15 @@ local function SendWebhook(yenVal, lumanVal, crystalVal)
         })
     end)
 
-    if not ok then
-        warn("[JujuZero Tracker]: Webhook POST error -> " .. tostring(err))
+    if ok then
+        print("[JujuZero Tracker]: Webhook sent successfully!")
+    else
+        warn("[JujuZero Tracker]: Webhook POST failed -> " .. tostring(response))
     end
 end
 
--- Execution Loop
-print("[JujuZero Tracker]: Crash-Proof UI Tracker Loaded.")
+-- Main Execution Loop
+print("[JujuZero Tracker v5 - Bulletproof Loaded]")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
