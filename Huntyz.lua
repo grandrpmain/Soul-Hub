@@ -115,42 +115,40 @@ end)
 ---------------------------------------------------------
 -- 2. AUTOMATIC SKILL SPAMMER
 ---------------------------------------------------------
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
 local isSkillEnabled = false
 local skillThread = nil
 
-local function useSkill()
-	local rawBytes = { 18, 1, 215, 49, 56, 253, 57, 161, 218, 65 }
-	local b = buffer.create(#rawBytes)
-	
-	for i, byte in ipairs(rawBytes) do
-		buffer.writeu8(b, i - 1, byte)
-	end
-	
-	ByteNetReliable:FireServer(b, nil)
-end
+-- CHANGE THIS to your game's skill key (e.g., Enum.KeyCode.Q, Enum.KeyCode.One, etc.)
+local SKILL_KEY = Enum.KeyCode.Z 
 
-local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Skill", Default = false })
+local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Skill Spammer", Default = false })
 
 SkillToggle:OnChanged(function(Value)
 	isSkillEnabled = Value
 
-	-- Cancel any running skill thread immediately
+	-- Cancel existing thread if running
 	if skillThread then
 		task.cancel(skillThread)
 		skillThread = nil
 	end
 
 	if not isSkillEnabled then 
-		print("[-] Skill Disabled")
+		print("[-] Skill Spammer Disabled")
 		return 
 	end
 
-	print("[+] Skill Started")
+	print("[+] Skill Spammer Started")
 
 	skillThread = task.spawn(function()
 		while isSkillEnabled do
-			useSkill()
-			task.wait(0.2)
+			-- Simulate keypress
+			VirtualInputManager:SendKeyEvent(true, SKILL_KEY, false, game)
+			task.wait(0.05)
+			VirtualInputManager:SendKeyEvent(false, SKILL_KEY, false, game)
+
+			task.wait(0.3) -- Cooldown between presses (adjust as needed)
 		end
 	end)
 end)
