@@ -35,85 +35,66 @@ local function CleanText(str)
     return str
 end
 
--- Smart Cursed Crystal Finder
+-- Safe Cursed Crystal Reader
 local function GetCursedCrystals()
-    -- Priority 1: Scan PlayerGui inventory slots directly (matches x107,514)
-    for _, desc in ipairs(PlayerGui:GetDescendants()) do
-        if desc:IsA("TextLabel") and desc.Text:find("x%d") then
-            local cleanStr = desc.Text:gsub("x", ""):gsub(",", ""):gsub("%s+", "")
-            local val = tonumber(cleanStr)
+    -- Priority 1: Safe UI Inventory Scanner
+    local uiSuccess, uiResult = pcall(function()
+        for _, desc in ipairs(PlayerGui:GetDescendants()) do
+            if desc:IsA("TextLabel") and desc.Text:find("x%d") then
+                local cleanStr = desc.Text:gsub("x", ""):gsub(",", ""):gsub("%s+", "")
+                local val = tonumber(cleanStr)
 
-            if val then
-                -- Search slot frame and ancestors up 4 levels for item name or icon match
-                local container = desc.Parent
-                for level = 1, 4 do
-                    if not container or container == PlayerGui then break end
+                if val and val > 0 then
+                    local container = desc.Parent
+                    for level = 1, 4 do
+                        if not container or container == PlayerGui then break end
 
-                    for _, child in ipairs(container:GetDescendants()) do
-                        local nameMatch = false
-                        
-                        if child:IsA("TextLabel") then
-                            local t = child.Text:lower()
-                            if t:find("cursed") or t:find("crystal") then nameMatch = true end
-                        elseif child:IsA("ImageLabel") or child:IsA("ImageButton") then
-                            local img = (child.Image or ""):lower()
-                            local n = child.Name:lower()
-                            if n:find("cursed") or n:find("crystal") or img:find("crystal") then nameMatch = true end
+                        for _, child in ipairs(container:GetDescendants()) do
+                            local match = false
+                            if child:IsA("TextLabel") then
+                                local t = child.Text:lower()
+                                if t:find("cursed") or t:find("crystal") then match = true end
+                            elseif child:IsA("ImageLabel") or child:IsA("ImageButton") then
+                                local img = (child.Image or ""):lower()
+                                local n = child.Name:lower()
+                                if n:find("cursed") or n:find("crystal") or img:find("crystal") then match = true end
+                            end
+
+                            if match then
+                                return FormatNumber(val)
+                            end
                         end
-
-                        if nameMatch then
-                            return FormatNumber(val)
-                        end
-                    end
-                    container = container.Parent
-                end
-            end
-        end
-    end
-
-    -- Priority 2: Check for direct text format ("Cursed Crystal: 107,514")
-    for _, desc in ipairs(PlayerGui:GetDescendants()) do
-        if desc:IsA("TextLabel") then
-            local t = desc.Text:lower()
-            if t:find("cursed") and t:find("crystal") then
-                local numStr = desc.Text:match("[%d%,]+")
-                if numStr then
-                    local val = tonumber((numStr:gsub(",", "")))
-                    if val and val > 0 then
-                        return FormatNumber(val)
+                        container = container.Parent
                     end
                 end
             end
         end
+        return nil
+    end)
+
+    if uiSuccess and uiResult then
+        return uiResult
     end
 
-    -- Priority 3: Search LocalPlayer ValueObjects
-    for _, obj in ipairs(LocalPlayer:GetDescendants()) do
-        if obj:IsA("ValueObject") or obj:IsA("IntValue") or obj:IsA("NumberValue") or obj:IsA("StringValue") then
-            local n = obj.Name:lower()
-            if n:find("cursed") or n:find("crystal") then
-                local val = tonumber(obj.Value)
-                if val and val > 0 and val < 1000000 then -- Filter out 1M+ stat counters
-                    return FormatNumber(val)
-                end
-            end
-        end
-    end
-
-    -- Priority 4: Filtered GC memory fallback (picks exact stack < 1M)
+    -- Priority 2: Safe Memory GC Scanner (Protected against Sleitnick Signal crashes)
     local targetCount = 0
-    local visited = {}
 
     for _, tbl in ipairs(getgc(true)) do
-        if type(tbl) == "table" and not visited[tbl] then
-            visited[tbl] = true
-            if rawget(tbl, 1) == "CursedCrystal" or tbl[1] == "CursedCrystal" then
-                local count = tonumber(tbl[2]) or 0
-                -- Exclude stat pools (>1M) and prioritize stack amount (~100k)
-                if count > targetCount and count < 1000000 then
-                    targetCount = count
+        if type(tbl) == "table" then
+            pcall(function()
+                -- Skip metatable objects like Sleitnick signals that throw indexing errors
+                local mt = getmetatable(tbl)
+                if mt then return end
+
+                local key = rawget(tbl, 1)
+                if key == "CursedCrystal" then
+                    local count = tonumber(rawget(tbl, 2)) or 0
+                    -- Target inventory stack count (~100k) while excluding stat pools (>1M)
+                    if count > targetCount and count < 1000000 then
+                        targetCount = count
+                    end
                 end
-            end
+            end)
         end
     end
 
@@ -148,7 +129,7 @@ local function GetHUDCurrencies()
     return yenText, lumanText
 end
 
--- Send Discord Webhook Payload
+-- Send Webhook
 local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
     local payload = {
         ["username"] = "Jujutsu Zero Tracker",
@@ -177,8 +158,8 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
     })
 end
 
--- Background Monitoring Loop
-print("[JujuZero Tracker]: Active inventory slot scanner initialized.")
+-- Loop
+print("[JujuZero Tracker]: Protected scanner initialized.")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
