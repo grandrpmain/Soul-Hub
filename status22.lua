@@ -11,11 +11,15 @@ if not httpRequest then
     return
 end
 
--- Helper: Format numbers with commas (e.g. 107514 -> 107,514)
+-- Helper: Format numbers with commas safely without tonumber base crashes
 local function FormatNumber(n)
     if not n then return "N/A" end
-    local str = tostring(n):gsub("x", ""):gsub("%s+", "")
-    local num = tonumber(str:gsub(",", ""))
+    local str = tostring(n)
+    str = (str:gsub("x", ""))
+    str = (str:gsub("%s+", ""))
+    local cleanStr = (str:gsub(",", ""))
+    
+    local num = tonumber(cleanStr)
     if not num then return tostring(n) end
 
     local formatted = tostring(num)
@@ -79,7 +83,10 @@ local function GetCursedCrystals()
         if inventory then
             for _, desc in ipairs(inventory:GetDescendants()) do
                 if desc:IsA("TextLabel") and desc.Text:find("x%d") then
-                    local cleanNum = desc.Text:gsub("x", ""):gsub(",", ""):gsub("%s+", "")
+                    local cleanNum = (desc.Text:gsub("x", ""))
+                    cleanNum = (cleanNum:gsub(",", ""))
+                    cleanNum = (cleanNum:gsub("%s+", ""))
+                    
                     local val = tonumber(cleanNum)
                     if val and val > 0 then
                         crystalVal = desc.Text
@@ -105,7 +112,8 @@ local function GetHUDCurrencies()
     if hud then
         for _, desc in ipairs(hud:GetDescendants()) do
             if desc:IsA("TextLabel") and desc.Text:find("%d") then
-                local cleanNum = desc.Text:gsub(",", ""):gsub("%s+", "")
+                local cleanNum = (desc.Text:gsub(",", ""))
+                cleanNum = (cleanNum:gsub("%s+", ""))
                 local val = tonumber(cleanNum)
                 if val then
                     if val > 10000000 then
@@ -142,19 +150,21 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
         }
     }
 
-    httpRequest({
-        Url = WebhookUrl,
-        Method = "POST",
-        Headers = {["Content-Type"] = "application/json"},
-        Body = HttpService:JSONEncode(payload)
-    })
+    pcall(function()
+        httpRequest({
+            Url = WebhookUrl,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
 end
 
 -- Main Monitoring Loop
 print("[JujuZero Tracker]: Targeted UI Path Tracker Initialized.")
 
 task.spawn(function()
-    local lastYen, lastLuman, lastCrystal = "", "", ""
+    local lastYen, lastLuman, lastCrystal = nil, nil, nil
 
     while true do
         local yen, luman = GetHUDCurrencies()
@@ -162,7 +172,7 @@ task.spawn(function()
 
         if yen ~= lastYen or luman ~= lastLuman or crystal ~= lastCrystal then
             lastYen, lastLuman, lastCrystal = yen, luman, crystal
-            print(string.format("[JujuZero Tracker]: Yen: %s | Luman: %s | Cursed Crystal: %s", yen, luman, crystal))
+            print(string.format("[JujuZero Tracker]: Yen: %s | Luman: %s | Cursed Crystal: %s", tostring(yen), tostring(luman), tostring(crystal)))
             SendCombinedEmbed(yen, luman, crystal)
         end
 
