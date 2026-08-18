@@ -11,7 +11,7 @@ if not httpRequest then
     return
 end
 
--- Helper: Format numbers with commas (e.g. 106638 -> 106,638)
+-- Helper: Format numbers with commas
 local function FormatNumber(n)
     local num = tonumber(n)
     if not num then return tostring(n or "N/A") end
@@ -24,7 +24,7 @@ local function FormatNumber(n)
     return formatted
 end
 
--- Helper: Clean raw text values
+-- Helper: Clean raw text formatting
 local function CleanText(str)
     if not str or str == "" or str == "N/A" then return "N/A" end
     local clean = str:gsub("x", ""):gsub("%s+", "")
@@ -35,35 +35,34 @@ local function CleanText(str)
     return str
 end
 
--- Memory Reader: Scans GC memory for live Cursed Crystal count (AFK Friendly)
+-- Read Cursed Crystals from GC Memory
 local function GetCursedCrystalsFromMemory()
     local totalCrystals = 0
-    local visitedTables = {}
-    local matchesFound = 0
+    local visited = {}
+    local found = false
 
     for _, tbl in ipairs(getgc(true)) do
-        if type(tbl) == "table" and not visitedTables[tbl] then
-            visitedTables[tbl] = true
+        if type(tbl) == "table" and not visited[tbl] then
+            visited[tbl] = true
             
-            -- Match Cursed Crystal item entry structure from GC
-            if rawget(tbl, 1) == "CursedCrystal" or tbl[1] == "CursedCrystal" then
-                local count = tonumber(tbl[2]) or 0
-                local multiplier = tonumber(tbl[5]) or 1
+            -- Match GC table structure: Sibling[1] == "CursedCrystal", Sibling[2] == Count, Sibling[5] == Multiplier
+            if rawget(tbl, 1) == "CursedCrystal" then
+                local count = tonumber(rawget(tbl, 2)) or 0
+                local multiplier = tonumber(rawget(tbl, 5)) or 1
                 
                 totalCrystals = totalCrystals + (count * multiplier)
-                matchesFound = matchesFound + 1
+                found = true
             end
         end
     end
 
-    if matchesFound > 0 then
+    if found then
         return FormatNumber(totalCrystals)
     end
-    
     return "N/A"
 end
 
--- HUD Reader: Get Yen and Luman from HUD labels
+-- Read Yen and Luman from HUD Labels
 local function GetHUDCurrencies()
     local yenText, lumanText = "N/A", "N/A"
     local hud = PlayerGui:FindFirstChild("HUD")
@@ -87,7 +86,7 @@ local function GetHUDCurrencies()
     return yenText, lumanText
 end
 
--- Webhook Embed Sender
+-- Send Consolidated Discord Webhook
 local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
     local payload = {
         ["username"] = "Jujutsu Zero Tracker",
@@ -116,14 +115,14 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
     })
 
     if response.StatusCode == 200 or response.StatusCode == 204 then
-        print("[JujuZero Tracker]: Discord webhook updated successfully!")
+        print("[JujuZero Tracker]: Webhook updated successfully!")
     else
         warn(string.format("[JujuZero Tracker]: Webhook failed (Status: %s)", tostring(response.StatusCode)))
     end
 end
 
--- AFK Loop (Runs in background every 5 seconds)
-print("[JujuZero Tracker]: Starting background AFK monitor...")
+-- Background Monitor Thread
+print("[JujuZero Tracker]: Starting single AFK background thread...")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
@@ -132,11 +131,10 @@ task.spawn(function()
         local yen, luman = GetHUDCurrencies()
         local crystal = GetCursedCrystalsFromMemory()
 
-        -- Send update whenever any currency balance changes
         if yen ~= lastYen or luman ~= lastLuman or crystal ~= lastCrystal then
             lastYen, lastLuman, lastCrystal = yen, luman, crystal
             
-            print(string.format("[JujuZero Tracker]: Sync -> Yen: %s | Luman: %s | Cursed Crystal: %s", yen, luman, crystal))
+            print(string.format("[JujuZero Tracker]: Yen: %s | Luman: %s | Cursed Crystal: %s", yen, luman, crystal))
             SendCombinedEmbed(yen, luman, crystal)
         end
 
