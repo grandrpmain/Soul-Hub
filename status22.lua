@@ -35,34 +35,58 @@ local function CleanText(str)
     return str
 end
 
--- Read Cursed Crystals from GC Memory
-local function GetCursedCrystalsFromMemory()
-    local totalCrystals = 0
-    local visited = {}
-    local found = false
-
-    for _, tbl in ipairs(getgc(true)) do
-        if type(tbl) == "table" and not visited[tbl] then
-            visited[tbl] = true
+-- Reliable Dual-Reader for Cursed Crystals
+local function GetCursedCrystals()
+    -- Strategy 1: Check PlayerGui inventory frames directly
+    for _, desc in ipairs(PlayerGui:GetDescendants()) do
+        if desc:IsA("TextLabel") and desc.Text:find("x%d") then
+            local parent = desc.Parent
+            local isCrystal = false
             
-            -- Match GC table structure: Sibling[1] == "CursedCrystal", Sibling[2] == Count, Sibling[5] == Multiplier
-            if rawget(tbl, 1) == "CursedCrystal" then
-                local count = tonumber(rawget(tbl, 2)) or 0
-                local multiplier = tonumber(rawget(tbl, 5)) or 1
-                
-                totalCrystals = totalCrystals + (count * multiplier)
-                found = true
+            -- Check if parent element relates to Cursed Crystal
+            while parent and parent ~= PlayerGui do
+                local pName = parent.Name:lower()
+                if pName:find("cursed") or pName:find("crystal") then
+                    isCrystal = true
+                    break
+                end
+                parent = parent.Parent
+            end
+            
+            if isCrystal then
+                local clean = desc.Text:gsub("x", ""):gsub(",", ""):gsub("%s+", "")
+                local val = tonumber(clean)
+                if val then
+                    return FormatNumber(val)
+                end
             end
         end
     end
 
-    if found then
-        return FormatNumber(totalCrystals)
+    -- Strategy 2: Precise GC memory lookup (No duplicate summing / multipliers)
+    local highestCount = 0
+    local visited = {}
+
+    for _, tbl in ipairs(getgc(true)) do
+        if type(tbl) == "table" and not visited[tbl] then
+            visited[tbl] = true
+            if rawget(tbl, 1) == "CursedCrystal" or tbl[1] == "CursedCrystal" then
+                local count = tonumber(tbl[2]) or 0
+                if count > highestCount then
+                    highestCount = count
+                end
+            end
+        end
     end
+
+    if highestCount > 0 then
+        return FormatNumber(highestCount)
+    end
+
     return "N/A"
 end
 
--- Read Yen and Luman from HUD Labels
+-- Get Yen and Luman from HUD
 local function GetHUDCurrencies()
     local yenText, lumanText = "N/A", "N/A"
     local hud = PlayerGui:FindFirstChild("HUD")
@@ -86,7 +110,7 @@ local function GetHUDCurrencies()
     return yenText, lumanText
 end
 
--- Send Consolidated Discord Webhook
+-- Send Webhook Payload
 local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
     local payload = {
         ["username"] = "Jujutsu Zero Tracker",
@@ -94,7 +118,7 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
         ["embeds"] = {
             {
                 ["title"] = "Currency Tracker Update",
-                ["color"] = 65280, -- Green
+                ["color"] = 65280,
                 ["fields"] = {
                     { ["name"] = "Player", ["value"] = LocalPlayer.DisplayName or LocalPlayer.Name, ["inline"] = false },
                     { ["name"] = "Yen", ["value"] = CleanText(yenVal), ["inline"] = true },
@@ -107,34 +131,26 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
         }
     }
 
-    local response = httpRequest({
+    httpRequest({
         Url = WebhookUrl,
         Method = "POST",
         Headers = {["Content-Type"] = "application/json"},
         Body = HttpService:JSONEncode(payload)
     })
-
-    if response.StatusCode == 200 or response.StatusCode == 204 then
-        print("[JujuZero Tracker]: Webhook updated successfully!")
-    else
-        warn(string.format("[JujuZero Tracker]: Webhook failed (Status: %s)", tostring(response.StatusCode)))
-    end
 end
 
--- Background Monitor Thread
-print("[JujuZero Tracker]: Starting single AFK background thread...")
+-- Main Monitor Loop
+print("[JujuZero Tracker]: Tracker initialized with dual UI/Memory reader.")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
 
     while true do
         local yen, luman = GetHUDCurrencies()
-        local crystal = GetCursedCrystalsFromMemory()
+        local crystal = GetCursedCrystals()
 
         if yen ~= lastYen or luman ~= lastLuman or crystal ~= lastCrystal then
             lastYen, lastLuman, lastCrystal = yen, luman, crystal
-            
-            print(string.format("[JujuZero Tracker]: Yen: %s | Luman: %s | Cursed Crystal: %s", yen, luman, crystal))
             SendCombinedEmbed(yen, luman, crystal)
         end
 
