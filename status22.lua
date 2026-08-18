@@ -11,12 +11,11 @@ if not httpRequest then
     return
 end
 
--- Bulletproof Number Formatter (100% immune to tonumber base errors)
+-- Bulletproof Number Formatter
 local function FormatNumber(val)
     if not val then return "N/A" end
     local str = tostring(val)
     
-    -- Extract digits strictly one-by-one to prevent multiple return values
     local digits = ""
     for digit in str:gmatch("%d") do
         digits = digits .. digit
@@ -24,10 +23,9 @@ local function FormatNumber(val)
 
     if digits == "" then return tostring(val) end
 
-    local num = tonumber(digits) -- Guaranteed single argument
+    local num = tonumber(digits)
     if not num then return tostring(val) end
 
-    -- Format with commas
     local formatted = tostring(num)
     while true do
         local res, count = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
@@ -37,21 +35,20 @@ local function FormatNumber(val)
     return formatted
 end
 
--- Reads Cursed Crystals from targeted diagnostic UI paths
+-- Reads Cursed Crystals specifically
 local function GetCursedCrystals()
     local result = nil
 
-    -- Path 1: Event Shop Header Currency Label ("107,514")
+    -- Target 1: LoveEvent Header AmountLabel (Diagnostic Match #7)
     pcall(function()
         local fullMenus = PlayerGui:FindFirstChild("FullMenus")
         if fullMenus then
             local loveEvent = fullMenus:FindFirstChild("LoveEvent_FullMenu")
             if loveEvent then
-                local currency = loveEvent.CanvasGroup.Frame.ImageLabel.Frame.EventShopHeader:FindFirstChild("Currency")
-                if currency then
-                    local label = currency:FindFirstChild("AmountLabel")
-                    if label and label:IsA("TextLabel") and label.Text ~= "" then
-                        result = label.Text
+                for _, desc in ipairs(loveEvent:GetDescendants()) do
+                    if desc:IsA("TextLabel") and desc.Name == "AmountLabel" and desc.Text ~= "" then
+                        result = desc.Text
+                        return
                     end
                 end
             end
@@ -62,14 +59,30 @@ local function GetCursedCrystals()
         return FormatNumber(result)
     end
 
-    -- Path 2: Inventory Grid Slot Labels ("x107,514")
+    -- Target 2: Precise Inventory Search (Matches Cursed Crystal item slot specifically)
     pcall(function()
         local inventory = PlayerGui.FullMenus:FindFirstChild("Inventory")
         if inventory then
-            for _, desc in ipairs(inventory:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Text:find("x%d") then
-                    result = desc.Text
-                    return
+            for _, slot in ipairs(inventory:GetDescendants()) do
+                -- Verify if slot is associated with "Cursed Crystal"
+                local isCrystal = false
+                for _, child in ipairs(slot:GetDescendants()) do
+                    if child:IsA("TextLabel") then
+                        local t = child.Text:lower()
+                        if t:find("cursed crystal") or t:find("crystal") then
+                            isCrystal = true
+                            break
+                        end
+                    end
+                end
+
+                if isCrystal then
+                    for _, child in ipairs(slot:GetDescendants()) do
+                        if child:IsA("TextLabel") and child.Text:find("x%d") then
+                            result = child.Text
+                            return
+                        end
+                    end
                 end
             end
         end
@@ -111,7 +124,7 @@ local function GetHUDCurrencies()
     return yenText, lumanText
 end
 
--- Webhook Dispatcher with Response Debugging
+-- Webhook Dispatcher
 local function SendWebhook(yenVal, lumanVal, crystalVal)
     local payload = {
         ["username"] = "Jujutsu Zero Tracker",
@@ -132,24 +145,18 @@ local function SendWebhook(yenVal, lumanVal, crystalVal)
         }
     }
 
-    local ok, response = pcall(function()
-        return httpRequest({
+    pcall(function()
+        httpRequest({
             Url = WebhookUrl,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode(payload)
         })
     end)
-
-    if ok then
-        print("[JujuZero Tracker]: Webhook sent successfully!")
-    else
-        warn("[JujuZero Tracker]: Webhook POST failed -> " .. tostring(response))
-    end
 end
 
 -- Main Execution Loop
-print("[JujuZero Tracker v5 - Bulletproof Loaded]")
+print("[JujuZero Tracker v6 - Precise Crystal Target Loaded]")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
