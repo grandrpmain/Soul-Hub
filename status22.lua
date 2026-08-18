@@ -11,126 +11,115 @@ if not httpRequest then
     return
 end
 
--- Helper: Format numbers with commas safely without tonumber base crashes
-local function FormatNumber(n)
-    if not n then return "N/A" end
-    local str = tostring(n)
-    str = (str:gsub("x", ""))
-    str = (str:gsub("%s+", ""))
-    local cleanStr = (str:gsub(",", ""))
+-- Completely isolated string formatter to prevent tonumber multi-return crashes
+local function FormatNumber(val)
+    if not val then return "N/A" end
+    local str = tostring(val)
+    local digitsOnly = str:gsub("[^%d]", "") -- Isolated to single variable
     
-    local num = tonumber(cleanStr)
-    if not num then return tostring(n) end
+    local num = tonumber(digitsOnly)
+    if not num then return tostring(val) end
 
     local formatted = tostring(num)
     while true do
-        local k
-        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
-        if k == 0 then break end
+        local res, count = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+        formatted = res
+        if count == 0 then break end
     end
     return formatted
 end
 
-local function CleanText(str)
-    if not str or str == "" or str == "N/A" then return "N/A" end
-    return FormatNumber(str)
-end
-
--- Direct Path Targeted Reader for Cursed Crystals
+-- Reads Cursed Crystals directly from verified diagnostic paths
 local function GetCursedCrystals()
-    local crystalVal = nil
+    local result = nil
 
-    -- Target 1: Event Shop Header Currency Amount Label
+    -- Path 1: LoveEvent Shop Header Currency Label ("107,514")
     pcall(function()
         local fullMenus = PlayerGui:FindFirstChild("FullMenus")
         if fullMenus then
             local loveEvent = fullMenus:FindFirstChild("LoveEvent_FullMenu")
             if loveEvent then
-                local amountLabel = loveEvent.CanvasGroup.Frame.ImageLabel.Frame.EventShopHeader.Currency:FindFirstChild("AmountLabel")
-                if amountLabel and amountLabel:IsA("TextLabel") and amountLabel.Text ~= "" then
-                    crystalVal = amountLabel.Text
-                end
-            end
-        end
-    end)
-
-    if crystalVal and crystalVal ~= "" then
-        return FormatNumber(crystalVal)
-    end
-
-    -- Target 2: Any "AmountLabel" inside a "Currency" frame anywhere in FullMenus
-    pcall(function()
-        local fullMenus = PlayerGui:FindFirstChild("FullMenus")
-        if fullMenus then
-            for _, desc in ipairs(fullMenus:GetDescendants()) do
-                if desc:IsA("TextLabel") and desc.Name == "AmountLabel" and desc.Parent and desc.Parent.Name == "Currency" then
-                    if desc.Text and desc.Text ~= "" then
-                        crystalVal = desc.Text
-                        return
+                local currency = loveEvent.CanvasGroup.Frame.ImageLabel.Frame.EventShopHeader:FindFirstChild("Currency")
+                if currency then
+                    local label = currency:FindFirstChild("AmountLabel")
+                    if label and label:IsA("TextLabel") and label.Text ~= "" then
+                        result = label.Text
                     end
                 end
             end
         end
     end)
 
-    if crystalVal and crystalVal ~= "" then
-        return FormatNumber(crystalVal)
+    if result and result ~= "" then
+        return FormatNumber(result)
     end
 
-    -- Target 3: FullMenus Inventory Scrolling Frame Slot Items
+    -- Path 2: Inventory Grid Slot Labels ("x107,514")
     pcall(function()
         local inventory = PlayerGui.FullMenus:FindFirstChild("Inventory")
         if inventory then
             for _, desc in ipairs(inventory:GetDescendants()) do
                 if desc:IsA("TextLabel") and desc.Text:find("x%d") then
-                    local cleanNum = (desc.Text:gsub("x", ""))
-                    cleanNum = (cleanNum:gsub(",", ""))
-                    cleanNum = (cleanNum:gsub("%s+", ""))
-                    
-                    local val = tonumber(cleanNum)
-                    if val and val > 0 then
-                        crystalVal = desc.Text
-                        return
+                    result = desc.Text
+                    return
+                end
+            end
+        end
+    end)
+
+    if result and result ~= "" then
+        return FormatNumber(result)
+    end
+
+    -- Path 3: Generic AmountLabel inside FullMenus
+    pcall(function()
+        local fullMenus = PlayerGui:FindFirstChild("FullMenus")
+        if fullMenus then
+            for _, desc in ipairs(fullMenus:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Name == "AmountLabel" and desc.Text ~= "" then
+                    result = desc.Text
+                    return
+                end
+            end
+        end
+    end)
+
+    if result and result ~= "" then
+        return FormatNumber(result)
+    end
+
+    return "N/A"
+end
+
+-- Reads Yen and Luman from HUD
+local function GetHUDCurrencies()
+    local yenText, lumanText = "N/A", "N/A"
+    
+    pcall(function()
+        local hud = PlayerGui:FindFirstChild("HUD")
+        if hud then
+            for _, desc in ipairs(hud:GetDescendants()) do
+                if desc:IsA("TextLabel") and desc.Text:find("%d") then
+                    local rawStr = desc.Text
+                    local digits = rawStr:gsub("[^%d]", "")
+                    local val = tonumber(digits)
+                    if val then
+                        if val > 10000000 then
+                            yenText = rawStr
+                        elseif val > 50000 then
+                            lumanText = rawStr
+                        end
                     end
                 end
             end
         end
     end)
 
-    if crystalVal and crystalVal ~= "" then
-        return FormatNumber(crystalVal)
-    end
-
-    return "N/A"
-end
-
--- Read HUD Currencies (Yen & Luman)
-local function GetHUDCurrencies()
-    local yenText, lumanText = "N/A", "N/A"
-    local hud = PlayerGui:FindFirstChild("HUD")
-    
-    if hud then
-        for _, desc in ipairs(hud:GetDescendants()) do
-            if desc:IsA("TextLabel") and desc.Text:find("%d") then
-                local cleanNum = (desc.Text:gsub(",", ""))
-                cleanNum = (cleanNum:gsub("%s+", ""))
-                local val = tonumber(cleanNum)
-                if val then
-                    if val > 10000000 then
-                        yenText = desc.Text
-                    elseif val > 50000 then
-                        lumanText = desc.Text
-                    end
-                end
-            end
-        end
-    end
-    
     return yenText, lumanText
 end
 
--- Send Discord Webhook Payload
-local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
+-- Webhook Dispatcher
+local function SendWebhook(yenVal, lumanVal, crystalVal)
     local payload = {
         ["username"] = "Jujutsu Zero Tracker",
         ["avatar_url"] = "https://i.imgur.com/8N3L4yP.png",
@@ -140,9 +129,9 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
                 ["color"] = 65280,
                 ["fields"] = {
                     { ["name"] = "Player", ["value"] = LocalPlayer.DisplayName or LocalPlayer.Name, ["inline"] = false },
-                    { ["name"] = "Yen", ["value"] = CleanText(yenVal), ["inline"] = true },
-                    { ["name"] = "Luman", ["value"] = CleanText(lumanVal), ["inline"] = true },
-                    { ["name"] = "Cursed Crystal", ["value"] = CleanText(crystalVal), ["inline"] = true }
+                    { ["name"] = "Yen", ["value"] = FormatNumber(yenVal), ["inline"] = true },
+                    { ["name"] = "Luman", ["value"] = FormatNumber(lumanVal), ["inline"] = true },
+                    { ["name"] = "Cursed Crystal", ["value"] = FormatNumber(crystalVal), ["inline"] = true }
                 },
                 ["footer"] = { ["text"] = "Jujutsu Zero AFK Monitoring" },
                 ["timestamp"] = DateTime.now():ToIsoDate()
@@ -150,7 +139,7 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
         }
     }
 
-    pcall(function()
+    local ok, err = pcall(function()
         httpRequest({
             Url = WebhookUrl,
             Method = "POST",
@@ -158,13 +147,17 @@ local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
             Body = HttpService:JSONEncode(payload)
         })
     end)
+
+    if not ok then
+        warn("[JujuZero Tracker]: Webhook POST error -> " .. tostring(err))
+    end
 end
 
--- Main Monitoring Loop
-print("[JujuZero Tracker]: Targeted UI Path Tracker Initialized.")
+-- Execution Loop
+print("[JujuZero Tracker]: Crash-Proof UI Tracker Loaded.")
 
 task.spawn(function()
-    local lastYen, lastLuman, lastCrystal = nil, nil, nil
+    local lastYen, lastLuman, lastCrystal = "", "", ""
 
     while true do
         local yen, luman = GetHUDCurrencies()
@@ -173,7 +166,7 @@ task.spawn(function()
         if yen ~= lastYen or luman ~= lastLuman or crystal ~= lastCrystal then
             lastYen, lastLuman, lastCrystal = yen, luman, crystal
             print(string.format("[JujuZero Tracker]: Yen: %s | Luman: %s | Cursed Crystal: %s", tostring(yen), tostring(luman), tostring(crystal)))
-            SendCombinedEmbed(yen, luman, crystal)
+            SendWebhook(yen, luman, crystal)
         end
 
         task.wait(5)
