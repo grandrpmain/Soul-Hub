@@ -1,98 +1,96 @@
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local ConfigsCurrencyPath = "ReplicatedStorage.Configs.ItemConfig.Items.Currency"
 local WebhookUrl = "https://discord.com/api/webhooks/1539304499276157049/3UZcBF9rcVH8VeYchanLmBehhx1yTnl7stH71gcB8fJibUJ5RMdfNkxudM9XjH3Ms3a5"
+local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
 
--- Helper: Safely resolve path string to an instance
-local function FindCurrencyFolder(path)
-    local current = game
-    for _, name in ipairs(string.split(path, ".")) do
-        current = current:FindFirstChild(name)
-        if not current then return nil end
-    end
-    return current
+if not httpRequest then
+    warn("[JujuZero Tracker]: Executor does not support HTTP requests.")
+    return
 end
 
-local CurrencyFolder = FindCurrencyFolder(ConfigsCurrencyPath)
-if not CurrencyFolder then 
-    warn("[JujuZero Tracker]: Could not locate path:", ConfigsCurrencyPath)
-    return 
-end
-
-print(string.format("[JujuZero Tracker]: Found %d entries under '%s'", #CurrencyFolder:GetChildren(), CurrencyFolder.Name))
-
--- Debug pass: Print available items
-for _, child in ipairs(CurrencyFolder:GetChildren()) do
-    local val = child:FindFirstChild("Value") and child.Value or 0
-    print(string.format("   -> [%s] = %s", child.Name, tostring(val)))
-end
-
-local ItemsToTrack = {"CursedCrystal", "GoldCoin"}
-local ItemCountsTable = {}
-local DebounceTable = {}
-
--- Helper: Fetch item value safely
-local function GetItemCount(itemName)
-    local itemObj = CurrencyFolder:FindFirstChild(itemName)
-    if not itemObj then return 0 end
+-- Helper: Format Numbers with Commas safely in Luau
+local function FormatNumber(numStr)
+    local clean = tostring(numStr):gsub("[^%d]", "")
+    if #clean == 0 then return numStr end
     
-    if itemObj:IsA("ValueBase") then
-        return itemObj.Value
-    elseif itemObj:FindFirstChild("Value") then
-        return itemObj.Value.Value
+    local formatted = clean:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    if formatted:sub(1, 1) == "," then
+        formatted = formatted:sub(2)
     end
-    return 0
+    return formatted
 end
 
--- Helper: Safe Webhook HTTP Sender
-local function SendWebhook(itemName, count)
+-- Helper: Send Formatted Discord Embed
+local function SendDiscordEmbed(currencyName, rawAmount)
+    local formattedAmount = FormatNumber(rawAmount)
+
     local payload = {
-        ["player"] = LocalPlayer.DisplayName or LocalPlayer.Name,
-        ["currency"] = itemName,
-        ["count"] = count,
-        ["timestamp"] = os.time(),
-        ["game_name"] = "Jujutsu Zero"
+        ["username"] = "Jujutsu Zero Tracker",
+        ["avatar_url"] = "https://i.imgur.com/8N3L4yP.png",
+        ["embeds"] = {
+            {
+                ["title"] = "Currency Tracker Update",
+                ["color"] = 65280, -- Green
+                ["fields"] = {
+                    { ["name"] = "Player", ["value"] = LocalPlayer.DisplayName or LocalPlayer.Name, ["inline"] = true },
+                    { ["name"] = "Currency", ["value"] = currencyName, ["inline"] = true },
+                    { ["name"] = "Amount", ["value"] = formattedAmount, ["inline"] = false }
+                },
+                ["footer"] = { ["text"] = "Jujutsu Zero Monitoring" },
+                ["timestamp"] = DateTime.now():ToIsoDate()
+            }
+        }
     }
 
-    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or request
-    if httpRequest then
-        httpRequest({
-            Url = WebhookUrl,
-            Method = "POST",
-            Headers = {["Content-Type"] = "application/json"},
-            Body = HttpService:JSONEncode(payload)
-        })
+    local response = httpRequest({
+        Url = WebhookUrl,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode(payload)
+    })
+
+    if response.StatusCode == 200 or response.StatusCode == 204 then
+        print(string.format("[JujuZero Tracker]: Discord update sent! %s = %s", currencyName, formattedAmount))
     else
-        warn("[JujuZero Tracker]: Executor does not support HTTP requests.")
+        warn(string.format("[JujuZero Tracker]: Failed to send (Status: %s)", tostring(response.StatusCode)))
     end
 end
 
--- Setup tracking for each item
-for _, itemName in ipairs(ItemsToTrack) do
-    local initialCount = GetItemCount(itemName)
-    ItemCountsTable[itemName] = initialCount
-
-    local itemObj = CurrencyFolder:FindFirstChild(itemName)
-    if itemObj then
-        local target = itemObj:IsA("ValueBase") and itemObj or itemObj:FindFirstChild("Value")
-        if target then
-            target.Changed:Connect(function(newValue)
-                if DebounceTable[itemName] then return end
-                DebounceTable[itemName] = true
-
-                print(string.format("[JujuZero Tracker]: %s updated to %s!", itemName, tostring(newValue)))
-                ItemCountsTable[itemName] = newValue
-
-                task.spawn(function()
-                    SendWebhook(itemName, newValue)
-                    task.wait(1)
-                    DebounceTable[itemName] = false
-                end)
-            end)
+-- Locate the target UI label displaying Cursed Crystals
+local function FindCurrencyLabel()
+    for _, desc in ipairs(PlayerGui:GetDescendants()) do
+        if desc:IsA("TextLabel") and (desc.Text:find("104") or desc.Text:find("594")) then
+            return desc
         end
     end
+    return nil
 end
 
-print(string.format("[JujuZero Tracker]: %d currencies now actively tracked.", #ItemsToTrack))
+local targetLabel = FindCurrencyLabel()
+
+if targetLabel then
+    print("[JujuZero Tracker]: Active and attached to UI element!")
+    
+    -- Send initial update
+    SendDiscordEmbed("Cursed Crystal", targetLabel.Text)
+    
+    -- Monitor live updates
+    local lastText = targetLabel.Text
+    local debounce = false
+
+    targetLabel:GetPropertyChangedSignal("Text"):Connect(function()
+        if debounce or targetLabel.Text == lastText then return end
+        debounce = true
+        lastText = targetLabel.Text
+
+        SendDiscordEmbed("Cursed Crystal", targetLabel.Text)
+
+        task.wait(2) -- Rate-limit protection
+        debounce = false
+    end)
+else
+    warn("[JujuZero Tracker]: Could not find UI Label. Keep your Supplies/Inventory menu open when launching the script!")
+end
