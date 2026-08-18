@@ -116,12 +116,11 @@ end)
 -- 2. AUTOMATIC SKILL SPAMMER
 ---------------------------------------------------------
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local ContextActionService = game:GetService("ContextActionService")
 
 local isSkillEnabled = false
 local skillThread = nil
 
--- Skill keys to press in order
+-- List of skill keys to press in sequence
 local SKILL_KEYS = {
 	Enum.KeyCode.Z,
 	Enum.KeyCode.X,
@@ -130,59 +129,43 @@ local SKILL_KEYS = {
 	Enum.KeyCode.G
 }
 
--- Common action names used in combat framework scripts for M1
-local M1_ACTIONS = { "Attack", "M1", "LightAttack", "Punch", "Swing" }
-
--- Server-side M1 trigger (no screen click)
-local function triggerM1()
-	for _, actionName in ipairs(M1_ACTIONS) do
-		ContextActionService:CallFunction(actionName, Enum.UserInputState.Begin, nil)
-		task.wait(0.02)
-		ContextActionService:CallFunction(actionName, Enum.UserInputState.End, nil)
-	end
-end
-
--- Key simulator for skills
+-- Helper function to simulate keypresses
 local function pressKey(keyCode)
 	VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
 	task.wait(0.03)
 	VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
 end
 
-local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Multi-Skill & M1", Default = false })
+local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Multi-Skill Spammer", Default = false })
 
 SkillToggle:OnChanged(function(Value)
 	isSkillEnabled = Value
 
-	-- Cancel existing thread immediately
+	-- Stop existing thread immediately if toggle state changes
 	if skillThread then
 		task.cancel(skillThread)
 		skillThread = nil
 	end
 
 	if not isSkillEnabled then 
-		print("[-] Skill & M1 Spammer Disabled")
+		print("[-] Multi-Skill Spammer Disabled")
 		return 
 	end
 
-	print("[+] Skill & M1 Spammer Started")
+	print("[+] Multi-Skill Spammer Started")
 
 	skillThread = task.spawn(function()
-		task.wait(0.2) -- Delay to let UI toggle finish safely
+		task.wait(0.2) -- Small initial delay so clicking the UI toggle finishes cleanly
 
 		while isSkillEnabled do
-			-- 1. Trigger Server-side M1
-			triggerM1()
-			task.wait(0.05)
-
-			-- 2. Cycle Z, X, C, V, G
+			-- Cycle through Z, X, C, V, G
 			for _, key in ipairs(SKILL_KEYS) do
 				if not isSkillEnabled then break end
 				pressKey(key)
-				task.wait(0.05)
+				task.wait(0.05) -- Delay between each keypress
 			end
 
-			task.wait(0.2)
+			task.wait(0.2) -- Delay before repeating the rotation
 		end
 	end)
 end)
