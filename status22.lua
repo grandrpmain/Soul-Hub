@@ -11,53 +11,63 @@ if not httpRequest then
     return
 end
 
--- Helper: Clean up raw text formatting
-local function CleanText(str)
-    if not str or str == "" then return "N/A" end
-    return str:gsub("x", ""):gsub("%s+", "")
-end
-
--- Helper: Send Multi-Currency Discord Embed
-local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
-    local payload = {
-        ["username"] = "Jujutsu Zero Tracker",
-        ["avatar_url"] = "https://i.imgur.com/8N3L4yP.png",
-        ["embeds"] = {
-            {
-                ["title"] = "Currency Tracker Update",
-                ["color"] = 65280, -- Green
-                ["fields"] = {
-                    { ["name"] = "Player", ["value"] = LocalPlayer.DisplayName or LocalPlayer.Name, ["inline"] = false },
-                    { ["name"] = "Yen", ["value"] = CleanText(yenVal), ["inline"] = true },
-                    { ["name"] = "Luman", ["value"] = CleanText(lumanVal), ["inline"] = true },
-                    { ["name"] = "Cursed Crystal", ["value"] = CleanText(crystalVal), ["inline"] = true }
-                },
-                ["footer"] = { ["text"] = "Jujutsu Zero Monitoring" },
-                ["timestamp"] = DateTime.now():ToIsoDate()
-            }
-        }
-    }
-
-    local response = httpRequest({
-        Url = WebhookUrl,
-        Method = "POST",
-        Headers = {["Content-Type"] = "application/json"},
-        Body = HttpService:JSONEncode(payload)
-    })
-
-    if response.StatusCode == 200 or response.StatusCode == 204 then
-        print("[JujuZero Tracker]: Webhook update sent successfully!")
-    else
-        warn(string.format("[JujuZero Tracker]: Webhook failed (Status: %s)", tostring(response.StatusCode)))
+-- Helper: Format numbers with commas (e.g. 106638 -> 106,638)
+local function FormatNumber(n)
+    local num = tonumber(n)
+    if not num then return tostring(n or "N/A") end
+    local formatted = tostring(num)
+    while true do
+        local k
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+        if k == 0 then break end
     end
+    return formatted
 end
 
--- Dynamic UI Finder (Reads live values directly from UI structure)
-local function GetCurrencies()
-    local yenText, lumanText, crystalText = "N/A", "N/A", "N/A"
+-- Helper: Clean raw text values
+local function CleanText(str)
+    if not str or str == "" or str == "N/A" then return "N/A" end
+    local clean = str:gsub("x", ""):gsub("%s+", "")
+    local num = tonumber(clean:gsub(",", ""))
+    if num then
+        return FormatNumber(num)
+    end
+    return str
+end
 
-    -- 1. Fetch HUD Currencies (Yen & Luman)
+-- Memory Reader: Scans GC memory for live Cursed Crystal count (AFK Friendly)
+local function GetCursedCrystalsFromMemory()
+    local totalCrystals = 0
+    local visitedTables = {}
+    local matchesFound = 0
+
+    for _, tbl in ipairs(getgc(true)) do
+        if type(tbl) == "table" and not visitedTables[tbl] then
+            visitedTables[tbl] = true
+            
+            -- Match Cursed Crystal item entry structure from GC
+            if rawget(tbl, 1) == "CursedCrystal" or tbl[1] == "CursedCrystal" then
+                local count = tonumber(tbl[2]) or 0
+                local multiplier = tonumber(tbl[5]) or 1
+                
+                totalCrystals = totalCrystals + (count * multiplier)
+                matchesFound = matchesFound + 1
+            end
+        end
+    end
+
+    if matchesFound > 0 then
+        return FormatNumber(totalCrystals)
+    end
+    
+    return "N/A"
+end
+
+-- HUD Reader: Get Yen and Luman from HUD labels
+local function GetHUDCurrencies()
+    local yenText, lumanText = "N/A", "N/A"
     local hud = PlayerGui:FindFirstChild("HUD")
+    
     if hud then
         for _, desc in ipairs(hud:GetDescendants()) do
             if desc:IsA("TextLabel") and desc.Text:find("%d") then
@@ -73,62 +83,63 @@ local function GetCurrencies()
             end
         end
     end
-
-    -- 2. Fetch Cursed Crystal dynamically from Inventory UI
-    local fullMenus = PlayerGui:FindFirstChild("FullMenus")
-    if fullMenus then
-        for _, desc in ipairs(fullMenus:GetDescendants()) do
-            if desc:IsA("TextLabel") and (desc.Text:find("x") or desc.Text:find("%d")) then
-                local parent = desc.Parent
-                local isCrystal = false
-                
-                -- Traverse parent hierarchy for "Cursed" or "Crystal" keywords
-                while parent and parent ~= fullMenus do
-                    local nameLower = parent.Name:lower()
-                    if nameLower:find("cursed") or nameLower:find("crystal") then
-                        isCrystal = true
-                        break
-                    end
-                    parent = parent.Parent
-                end
-
-                -- Fallback: Check sibling element names/images
-                if not isCrystal and desc.Parent then
-                    for _, sibling in ipairs(desc.Parent.Parent:GetDescendants()) do
-                        local sName = sibling.Name:lower()
-                        if sName:find("crystal") or sName:find("cursed") then
-                            isCrystal = true
-                            break
-                        end
-                    end
-                end
-
-                if isCrystal then
-                    crystalText = desc.Text
-                    break
-                end
-            end
-        end
-    end
-
-    return yenText, lumanText, crystalText
+    
+    return yenText, lumanText
 end
 
--- Active Monitoring Loop
-print("[JujuZero Tracker]: Initializing dynamic UI tracker...")
+-- Webhook Embed Sender
+local function SendCombinedEmbed(yenVal, lumanVal, crystalVal)
+    local payload = {
+        ["username"] = "Jujutsu Zero Tracker",
+        ["avatar_url"] = "https://i.imgur.com/8N3L4yP.png",
+        ["embeds"] = {
+            {
+                ["title"] = "Currency Tracker Update",
+                ["color"] = 65280, -- Green
+                ["fields"] = {
+                    { ["name"] = "Player", ["value"] = LocalPlayer.DisplayName or LocalPlayer.Name, ["inline"] = false },
+                    { ["name"] = "Yen", ["value"] = CleanText(yenVal), ["inline"] = true },
+                    { ["name"] = "Luman", ["value"] = CleanText(lumanVal), ["inline"] = true },
+                    { ["name"] = "Cursed Crystal", ["value"] = CleanText(crystalVal), ["inline"] = true }
+                },
+                ["footer"] = { ["text"] = "Jujutsu Zero AFK Monitoring" },
+                ["timestamp"] = DateTime.now():ToIsoDate()
+            }
+        }
+    }
+
+    local response = httpRequest({
+        Url = WebhookUrl,
+        Method = "POST",
+        Headers = {["Content-Type"] = "application/json"},
+        Body = HttpService:JSONEncode(payload)
+    })
+
+    if response.StatusCode == 200 or response.StatusCode == 204 then
+        print("[JujuZero Tracker]: Discord webhook updated successfully!")
+    else
+        warn(string.format("[JujuZero Tracker]: Webhook failed (Status: %s)", tostring(response.StatusCode)))
+    end
+end
+
+-- AFK Loop (Runs in background every 5 seconds)
+print("[JujuZero Tracker]: Starting background AFK monitor...")
 
 task.spawn(function()
     local lastYen, lastLuman, lastCrystal = "", "", ""
-    
-    while task.wait(2) do
-        local currentYen, currentLuman, currentCrystal = GetCurrencies()
-        
-        -- Trigger update if any balance changes
-        if currentYen ~= lastYen or currentLuman ~= lastLuman or currentCrystal ~= lastCrystal then
-            lastYen, lastLuman, lastCrystal = currentYen, currentLuman, currentCrystal
+
+    while true do
+        local yen, luman = GetHUDCurrencies()
+        local crystal = GetCursedCrystalsFromMemory()
+
+        -- Send update whenever any currency balance changes
+        if yen ~= lastYen or luman ~= lastLuman or crystal ~= lastCrystal then
+            lastYen, lastLuman, lastCrystal = yen, luman, crystal
             
-            print(string.format("[JujuZero Tracker]: Live Sync -> Yen: %s | Luman: %s | Crystal: %s", currentYen, currentLuman, currentCrystal))
-            SendCombinedEmbed(currentYen, currentLuman, currentCrystal)
+            print(string.format("[JujuZero Tracker]: Sync -> Yen: %s | Luman: %s | Cursed Crystal: %s", yen, luman, crystal))
+            SendCombinedEmbed(yen, luman, crystal)
         end
+
+        task.wait(5)
     end
 end)
