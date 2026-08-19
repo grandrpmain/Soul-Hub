@@ -272,5 +272,65 @@ Tabs.Lobby:AddButton({
 	end
 })
 
+---------------------------------------------------------
+-- FLY / ZOMBIE SAFE HOVER TOGGLE
+---------------------------------------------------------
+local isFlying = false
+local flyThread = nil
 
+local FlyToggle = Tabs.Main:AddToggle("Fly", { Title = "Fly (Safe Hover)", Default = false })
+
+FlyToggle:OnChanged(function(Value)
+	isFlying = Value
+
+	-- Cancel existing hover loop immediately
+	if flyThread then
+		task.cancel(flyThread)
+		flyThread = nil
+	end
+
+	if not isFlying then 
+		print("[-] Fly Hover Disabled")
+		return 
+	end
+
+	print("[+] Fly Hover Started")
+
+	flyThread = task.spawn(function()
+		while isFlying do
+			local character = player.Character or player.CharacterAdded:Wait()
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+
+			if hrp then
+				local playerPos = hrp.Position
+				local closestPart = nil
+				local shortestDistance = math.huge
+
+				-- Find the nearest Zombie NPC
+				for _, obj in ipairs(workspace:GetDescendants()) do
+					if obj:IsA("BasePart") and obj:GetAttribute("EntityTeam") == "Zombie" then
+						local distance = (playerPos - obj.Position).Magnitude
+						if distance < shortestDistance then
+							shortestDistance = distance
+							closestPart = obj
+						end
+					end
+				end
+
+				-- Teleport & lock position safely above the Zombie
+				if closestPart then
+					-- Cancel gravity velocity so you don't fall between ticks
+					hrp.AssemblyLinearVelocity = Vector3.zero
+					hrp.AssemblyAngularVelocity = Vector3.zero
+
+					-- Positions you 8 studs DIRECTLY ABOVE the zombie
+					local safeHoverPos = closestPart.CFrame * CFrame.new(0, 8, 0)
+					character:PivotTo(safeHoverPos)
+				end
+			end
+
+			task.wait(0.1) -- Fast refresh so you follow moving zombies smoothly
+		end
+	end)
+end)
 Window:SelectTab(1)
