@@ -14,6 +14,7 @@ local Window = Fluent:CreateWindow({
 local Tabs = {
     Main = Window:AddTab({ Title = "Auto Farm", Icon = "rbxassetid://10723407068" }),
     Combat = Window:AddTab({ Title = "Combat / Aura", Icon = "rbxassetid://10723345802" }),
+    Lobby = Window:AddTab({ Title = "Lobby", Icon = "rbxassetid://10723345802" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
@@ -169,6 +170,63 @@ SkillToggle:OnChanged(function(Value)
 		end
 	end)
 end)
+
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+-- List of active codes
+local codesList = {
+	"Anniversary!",
+	"ScytheEvolution!",
+	"Dubstep!",
+	"HappyBirthday!",
+	"PartyBreaker!",
+	"SorryForBadCode",
+	"VeryHotHotfixes"
+}
+
+-- Add button to your UI Tab
+Tabs.Lobby:AddButton({
+	Title = "Redeem All Codes",
+	Description = "Automatically redeems all active promo codes",
+	Callback = function()
+		-- Run in a thread so it doesn't freeze the UI
+		task.spawn(function()
+			print("[+] Starting code redemption process...")
+
+			local playerGui = player:WaitForChild("PlayerGui")
+
+			for i, code in ipairs(codesList) do
+				-- Safely find the TextBox path without breaking if the UI is hidden
+				local guiFolder = playerGui:FindFirstChild("GUI")
+				local codesFrame = guiFolder and guiFolder:FindFirstChild("Codes")
+				local content = codesFrame and codesFrame:FindFirstChild("Content")
+				local searchBar = content and content:FindFirstChild("SearchBar")
+				local textBox = searchBar and searchBar:FindFirstChild("TextBox")
+
+				if textBox and textBox:IsA("TextBox") then
+					-- Step 1: Set the text to the code
+					textBox.Text = code
+					task.wait(0.1)
+
+					-- Step 2: Focus and Release Focus with 'true' (Simulates pressing Enter to submit)
+					textBox:CaptureFocus()
+					task.wait(0.05)
+					textBox:ReleaseFocus(true)
+
+					print(string.format("[%d/%d] Redeemed: %s", i, #codesList, code))
+				else
+					warn("[-] Codes UI not found! Please open the Codes menu in-game first.")
+				end
+
+				-- Step 3: Wait 1.5 seconds before processing the next code
+				task.wait(1.5)
+			end
+
+			print("[+] Finished redeeming all codes!")
+		end)
+	end
+})
 
 
 Window:SelectTab(1)
