@@ -174,7 +174,7 @@ SkillToggle:OnChanged(function(Value)
 end)
 
 ---------------------------------------------------------
--- 3. CODE REDEEMER BUTTON
+-- 3. CODE REDEEMER BUTTON (FIXED)
 ---------------------------------------------------------
 local codesList = {
 	"Anniversary!",
@@ -196,6 +196,7 @@ Tabs.Lobby:AddButton({
 			local playerGui = player:WaitForChild("PlayerGui")
 
 			for i, code in ipairs(codesList) do
+				-- Navigate to UI elements
 				local guiFolder = playerGui:FindFirstChild("GUI")
 				local codesFrame = guiFolder and guiFolder:FindFirstChild("Codes")
 				local content = codesFrame and codesFrame:FindFirstChild("Content")
@@ -203,22 +204,47 @@ Tabs.Lobby:AddButton({
 				local textBox = searchBar and searchBar:FindFirstChild("TextBox")
 
 				if textBox and textBox:IsA("TextBox") then
-					textBox.Text = code
-					task.wait(0.1)
-
+					-- Step 1: Focus and set text
 					textBox:CaptureFocus()
 					task.wait(0.05)
-					textBox:ReleaseFocus(true)
+					textBox.Text = code
+					task.wait(0.05)
 
-					print(string.format("[%d/%d] Redeemed: %s", i, #codesList, code))
+					-- Step 2: Trigger FocusLost signal if executor supports firesignal
+					if typeof(firesignal) == "function" then
+						pcall(function()
+							firesignal(textBox.FocusLost, true)
+						end)
+					end
+
+					-- Step 3: Simulate pressing the Physical 'Enter' Key
+					VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Return, false, game)
+					task.wait(0.03)
+					VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Return, false, game)
+
+					-- Step 4: Search for any Redeem button in SearchBar/Content and click it
+					local redeemBtn = searchBar:FindFirstChildOfClass("TextButton") 
+						or searchBar:FindFirstChildOfClass("ImageButton")
+						or (content and content:FindFirstChildOfClass("TextButton"))
+
+					if redeemBtn then
+						if typeof(firesignal) == "function" then
+							pcall(function()
+								firesignal(redeemBtn.MouseButton1Click)
+								firesignal(redeemBtn.Activated)
+							end)
+						end
+					end
+
+					print(string.format("[%d/%d] Attempted: %s", i, #codesList, code))
 				else
-					warn("[-] Codes UI not found! Please open the Codes menu in-game first.")
+					warn("[-] Codes UI not found! Open the Codes UI window in the Lobby first.")
 				end
 
-				task.wait(1.5)
+				task.wait(1.5) -- Wait between codes
 			end
 
-			print("[+] Finished redeeming all codes!")
+			print("[+] Finished code redemption cycle!")
 		end)
 	end
 })
