@@ -15,6 +15,7 @@ local Tabs = {
     Main = Window:AddTab({ Title = "Main", Icon = "rbxassetid://10723407068" }),
     Combat = Window:AddTab({ Title = "Testing", Icon = "rbxassetid://10723345802" }),
     Lobby = Window:AddTab({ Title = "Lobby", Icon = "rbxassetid://10723345802" }),
+	Raid = Window:AddTab({ Title = "Raid", Icon = "rbxassetid://10723345802" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
 
@@ -333,4 +334,78 @@ FlyToggle:OnChanged(function(Value)
 		end
 	end)
 end)
+
+---------------------------------------------------------
+-- RAID BOSS SAFE HOVER TOGGLE
+---------------------------------------------------------
+local isRaidFlying = false
+local raidThread = nil
+
+-- Helper function to automatically locate any non-player boss model
+local function findRaidBoss()
+	local localChar = player.Character
+
+	-- 1. Check if the game puts raid bosses in a specific workspace folder
+	local raidFolder = workspace:FindFirstChild("Raid") 
+		or workspace:FindFirstChild("Boss") 
+		or workspace:FindFirstChild("Enemies") 
+		or workspace:FindFirstChild("Bosses")
+
+	local searchTargets = raidFolder and raidFolder:GetDescendants() or workspace:GetChildren()
+
+	for _, obj in ipairs(searchTargets) do
+		if obj:IsA("Model") and obj ~= localChar then
+			local humanoid = obj:FindFirstChildOfClass("Humanoid")
+			
+			-- Check if it has health and is NOT a player character
+			if humanoid and humanoid.Health > 0 and not Players:GetPlayerFromCharacter(obj) then
+				return obj
+			end
+		end
+	end
+
+	return nil
+end
+
+local RaidFlyToggle = Tabs.Raid:AddToggle("RaidFly", { Title = "Raid Boss Safe Hover", Default = false })
+
+RaidFlyToggle:OnChanged(function(Value)
+	isRaidFlying = Value
+
+	if raidThread then
+		task.cancel(raidThread)
+		raidThread = nil
+	end
+
+	if not isRaidFlying then 
+		print("[-] Raid Boss Hover Disabled")
+		return 
+	end
+
+	print("[+] Raid Boss Hover Started")
+
+	raidThread = task.spawn(function()
+		while isRaidFlying do
+			local character = player.Character or player.CharacterAdded:Wait()
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+
+			if hrp then
+				local boss = findRaidBoss()
+
+				if boss then
+					-- Stop physics forces so you don't fall
+					hrp.AssemblyLinearVelocity = Vector3.zero
+					hrp.AssemblyAngularVelocity = Vector3.zero
+
+					-- Takes the boss's center CFrame and offsets 12 studs straight UP (+Y)
+					local safeHoverCFrame = boss:GetPivot() * CFrame.new(0, 18, 0)
+					character:PivotTo(safeHoverCFrame)
+				end
+			end
+
+			task.wait(0.1) -- Fast loop rate to stick above the boss as it moves
+		end
+	end)
+end)
+
 Window:SelectTab(1)
