@@ -174,7 +174,7 @@ SkillToggle:OnChanged(function(Value)
 end)
 
 ---------------------------------------------------------
--- 3. CODE REDEEMER BUTTON (FIXED CONFIRM CLICK)
+-- 3. CODE REDEEMER BUTTON (EXACT PATH FIXED)
 ---------------------------------------------------------
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
@@ -188,20 +188,18 @@ local codesList = {
 	"VeryHotHotfixes"
 }
 
--- Helper function to force-click any button cleanly
-local function forceClickButton(button)
+-- Function to force-click the Accept button using all executor methods
+local function clickAcceptButton(button)
 	if not button then return end
 
-	-- 1. Try firesignal (Supported on Delta, Wave, etc.)
+	-- Method 1: firesignal (Delta, Wave, Solara, etc.)
 	if typeof(firesignal) == "function" then
-		pcall(function()
-			firesignal(button.MouseButton1Click)
-			firesignal(button.MouseButton1Down)
-			firesignal(button.Activated)
-		end)
+		pcall(function() firesignal(button.MouseButton1Click) end)
+		pcall(function() firesignal(button.MouseButton1Down) end)
+		pcall(function() firesignal(button.Activated) end)
 	end
 
-	-- 2. Try getconnections
+	-- Method 2: getconnections
 	if typeof(getconnections) == "function" then
 		pcall(function()
 			for _, conn in ipairs(getconnections(button.MouseButton1Click)) do conn:Fire() end
@@ -209,16 +207,18 @@ local function forceClickButton(button)
 		end)
 	end
 
-	-- 3. Physical screen coordinate tap on the button center
+	-- Method 3: Virtual Mouse Click directly on button coordinates
 	pcall(function()
-		local absPos = button.AbsolutePosition
-		local absSize = button.AbsoluteSize
-		local centerX = absPos.X + (absSize.X / 2)
-		local centerY = absPos.Y + (absSize.Y / 2) + 58 -- Compensate for Roblox topbar offset
+		local pos = button.AbsolutePosition
+		local size = button.AbsoluteSize
+		if pos and size then
+			local centerX = pos.X + (size.X / 2)
+			local centerY = pos.Y + (size.Y / 2) + 58 -- TopBar offset
 
-		VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
-		task.wait(0.02)
-		VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+			VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, true, game, 0)
+			task.wait(0.03)
+			VirtualInputManager:SendMouseButtonEvent(centerX, centerY, 0, false, game, 0)
+		end
 	end)
 end
 
@@ -235,52 +235,36 @@ Tabs.Lobby:AddButton({
 				local guiFolder = playerGui:FindFirstChild("GUI")
 				local codesFrame = guiFolder and guiFolder:FindFirstChild("Codes")
 				local content = codesFrame and codesFrame:FindFirstChild("Content")
+				
+				-- TextBox: GUI > Codes > Content > SearchBar > TextBox
 				local searchBar = content and content:FindFirstChild("SearchBar")
 				local textBox = searchBar and searchBar:FindFirstChild("TextBox")
 
+				-- Confirm Button: GUI > Codes > Content > Buttone > Accept
+				local buttoneFrame = content and content:FindFirstChild("Buttone")
+				local acceptButton = buttoneFrame and buttoneFrame:FindFirstChild("Accept")
+
 				if textBox and textBox:IsA("TextBox") then
-					-- Step 1: Input Code text
+					-- Step 1: Input the Code
 					textBox.Text = code
 					task.wait(0.2)
 
-					-- Step 2: Search for the CONFIRM button inside the Codes window
-					local confirmBtn = nil
-					if codesFrame then
-						for _, desc in ipairs(codesFrame:GetDescendants()) do
-							if desc:IsA("TextButton") or desc:IsA("ImageButton") then
-								-- Match button name or text labeled "Confirm" or "Redeem"
-								local btnName = desc.Name:lower()
-								local btnText = desc:IsA("TextButton") and desc.Text:lower() or ""
-
-								if btnName:find("confirm") or btnName:find("redeem") or btnText:find("confirm") then
-									confirmBtn = desc
-									break
-								end
-							end
-						end
-
-						-- Fallback: Grab the first button inside Content if not found by name
-						if not confirmBtn and content then
-							confirmBtn = content:FindFirstChildOfClass("TextButton") or content:FindFirstChildOfClass("ImageButton")
-						end
-					end
-
-					-- Step 3: Trigger the Confirm Button click
-					if confirmBtn then
-						forceClickButton(confirmBtn)
-						print(string.format("[%d/%d] Submitted & Clicked Confirm: %s", i, #codesList, code))
+					-- Step 2: Click the 'Accept' button
+					if acceptButton then
+						clickAcceptButton(acceptButton)
+						print(string.format("[%d/%d] Redeemed & Clicked Accept: %s", i, #codesList, code))
 					else
-						-- Fallback if button isn't detected
+						-- Fallback if button isn't found
 						textBox:CaptureFocus()
 						task.wait(0.05)
 						textBox:ReleaseFocus(true)
-						print(string.format("[%d/%d] Submitted via Enter: %s", i, #codesList, code))
+						warn("[-] 'Accept' button not found inside Content.Buttone")
 					end
 				else
-					warn("[-] Codes UI not found! Open the Codes UI window in the Lobby first.")
+					warn("[-] Codes UI not found! Please open the Codes menu in the Lobby first.")
 				end
 
-				task.wait(1.5) -- Wait between codes
+				task.wait(1.5) -- Delay between code submissions
 			end
 
 			print("[+] Finished redeeming all codes!")
