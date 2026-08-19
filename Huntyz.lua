@@ -324,7 +324,7 @@ FlyToggle:OnChanged(function(Value)
 					hrp.AssemblyAngularVelocity = Vector3.zero
 
 					-- Positions you 8 studs DIRECTLY ABOVE the zombie
-					local safeHoverPos = closestPart.CFrame * CFrame.new(0, 8, 0)
+					local safeHoverPos = closestPart.CFrame * CFrame.new(0, 2, 6)
 					character:PivotTo(safeHoverPos)
 				end
 			end
@@ -386,6 +386,68 @@ RaidToggle:OnChanged(function(Value)
 			end
 
 			task.wait(0.05) -- Adjust speed here if the game drops inputs
+		end
+	end)
+end)
+
+
+---------------------------------------------------------
+-- MAX DPS & BEHIND-THE-BACK AUTO-FARM
+---------------------------------------------------------
+local isBossFarmEnabled = false
+local bossFarmThread = nil
+
+local BossFarmToggle = Tabs.Main:AddToggle("BossFarm", { Title = "Smart Boss Farm (Behind + M1)", Default = false })
+
+BossFarmToggle:OnChanged(function(Value)
+	isBossFarmEnabled = Value
+
+	if bossFarmThread then
+		task.cancel(bossFarmThread)
+		bossFarmThread = nil
+	end
+
+	if not isBossFarmEnabled then return end
+
+	bossFarmThread = task.spawn(function()
+		while isBossFarmEnabled do
+			local character = player.Character
+			local hrp = character and character:FindFirstChild("HumanoidRootPart")
+
+			if hrp then
+				-- Find closest Boss / Zombie
+				local closestObj = nil
+				local shortestDist = math.huge
+
+				for _, obj in ipairs(workspace:GetDescendants()) do
+					if obj:IsA("BasePart") and obj:GetAttribute("EntityTeam") == "Zombie" then
+						local dist = (hrp.Position - obj.Position).Magnitude
+						if dist < shortestDist then
+							shortestDist = dist
+							closestObj = obj
+						end
+					end
+				end
+
+				-- Lock position behind the target & attack
+				if closestObj then
+					hrp.AssemblyLinearVelocity = Vector3.zero
+					
+					-- Positions you 5 studs BEHIND and 3 studs ABOVE the target
+					character:PivotTo(closestObj.CFrame * CFrame.new(0, 3, 5))
+
+					-- 1. Trigger equipped tool M1
+					local tool = character:FindFirstChildOfClass("Tool")
+					if tool then tool:Activate() end
+
+					-- 2. Trigger skill keys
+					for _, key in ipairs(SKILL_KEYS) do
+						task.spawn(function() pressKey(key) end)
+					end
+				end
+			end
+
+			task.wait(0.05)
 		end
 	end)
 end)
