@@ -20,12 +20,15 @@ local Tabs = {
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local player = Players.LocalPlayer
-local ByteNetReliable = ReplicatedStorage:WaitForChild("ByteNetReliable")
+
+-- Use timeouts on WaitForChild so the script NEVER freezes if a remote/folder is missing in Lobby
+local ByteNetReliable = ReplicatedStorage:WaitForChild("ByteNetReliable", 2)
 
 ---------------------------------------------------------
--- 1. DOOR & ZOMBIE AUTOFARM
+-- TAB 1: MAIN (AutoFarm)
 ---------------------------------------------------------
 local isFarming = false
 local farmThread = nil
@@ -35,76 +38,55 @@ local AutoFarmToggle = Tabs.Main:AddToggle("Door&Zombie", { Title = "Doors&Zombi
 AutoFarmToggle:OnChanged(function(Value)
 	isFarming = Value
 
-	-- Cancel any previously running farm thread immediately
 	if farmThread then
 		task.cancel(farmThread)
 		farmThread = nil
 	end
 
-	if not isFarming then 
-		print("[-] AutoFarm Disabled")
-		return 
-	end
-
-	print("[+] AutoFarm Started")
+	if not isFarming then return end
 
 	farmThread = task.spawn(function()
-		local doorsFolder = workspace:FindFirstChild("School") and workspace.School:FindFirstChild("Doors")
+		-- Safe check: Only searches for doors when the toggle is ON
+		local school = workspace:FindFirstChild("School")
+		local doorsFolder = school and school:FindFirstChild("Doors")
 
-		-- STEP 1: CYCLE THROUGH ALL DOORS
 		if doorsFolder then
 			for i, door in ipairs(doorsFolder:GetChildren()) do
 				local character = player.Character or player.CharacterAdded:Wait()
-				local hrp = character:WaitForChild("HumanoidRootPart")
+				local hrp = character:FindFirstChild("HumanoidRootPart")
 
-				local targetCFrame
-				if door:IsA("Model") then
-					targetCFrame = door:GetPivot()
-				elseif door:IsA("BasePart") then
-					targetCFrame = door.CFrame
+				if hrp then
+					local targetCFrame = door:IsA("Model") and door:GetPivot() or door.CFrame
+					if targetCFrame then
+						hrp.AssemblyLinearVelocity = Vector3.zero
+						character:PivotTo(targetCFrame * CFrame.new(0, 5, 3))
+					end
 				end
-
-				if targetCFrame then
-					hrp.AssemblyLinearVelocity = Vector3.zero
-					hrp.AssemblyAngularVelocity = Vector3.zero
-
-					-- Offset height by 5 studs
-					local safePosition = targetCFrame * CFrame.new(0, 5, 3)
-					character:PivotTo(safePosition)
-					print(string.format("[%d/%d] TP'd to door: %s", i, #doorsFolder:GetChildren(), door.Name))
-				end
-
 				task.wait(1.5)
 			end
+		else
+			warn("[-] School/Doors folder not found (You are likely in the Lobby!)")
 		end
 
-		-- STEP 2: FARM ZOMBIES CONTINUOUSLY
+		-- Zombie Loop
 		while isFarming do
 			local character = player.Character or player.CharacterAdded:Wait()
 			local playerPos = character:GetPivot().Position
-
 			local closestPart = nil
 			local shortestDistance = math.huge
 
-			-- Find nearest Zombie
 			for _, obj in ipairs(workspace:GetDescendants()) do
-				if obj:IsA("BasePart") then
-					local entityTeam = obj:GetAttribute("EntityTeam")
-					if entityTeam == "Zombie" then
-						local distance = (playerPos - obj.Position).Magnitude
-						if distance < shortestDistance then
-							shortestDistance = distance
-							closestPart = obj
-						end
+				if obj:IsA("BasePart") and obj:GetAttribute("EntityTeam") == "Zombie" then
+					local distance = (playerPos - obj.Position).Magnitude
+					if distance < shortestDistance then
+						shortestDistance = distance
+						closestPart = obj
 					end
 				end
 			end
 
-			-- Teleport to Zombie
 			if closestPart then
-				local targetCFrame = closestPart.CFrame * CFrame.new(0, -3, 3)
-				character:PivotTo(targetCFrame)
-				print("Teleported to Zombie:", closestPart:GetAttribute("EntityVariant") or "Basic")
+				character:PivotTo(closestPart.CFrame * CFrame.new(0, -3, 3))
 			end
 
 			task.wait(1)
@@ -112,69 +94,47 @@ AutoFarmToggle:OnChanged(function(Value)
 	end)
 end)
 
-
 ---------------------------------------------------------
--- 2. AUTOMATIC SKILL SPAMMER
+-- TAB 2: TESTING (Skill Spammer)
 ---------------------------------------------------------
-local VirtualInputManager = game:GetService("VirtualInputManager")
-
 local isSkillEnabled = false
 local skillThread = nil
+local SKILL_KEYS = { Enum.KeyCode.Z, Enum.KeyCode.X, Enum.KeyCode.C, Enum.KeyCode.V, Enum.KeyCode.G }
 
--- List of skill keys to press in sequence
-local SKILL_KEYS = {
-	Enum.KeyCode.Z,
-	Enum.KeyCode.X,
-	Enum.KeyCode.C,
-	Enum.KeyCode.V,
-	Enum.KeyCode.G
-}
-
--- Helper function to simulate keypresses
 local function pressKey(keyCode)
 	VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
 	task.wait(0.03)
 	VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
 end
 
-local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Multi-Skill Spammer", Default = false })
+local SkillToggle = Tabs.Testing:AddToggle("Skill", { Title = "Multi-Skill Spammer", Default = false })
 
 SkillToggle:OnChanged(function(Value)
 	isSkillEnabled = Value
 
-	-- Stop existing thread immediately if toggle state changes
 	if skillThread then
 		task.cancel(skillThread)
 		skillThread = nil
 	end
 
-	if not isSkillEnabled then 
-		print("[-] Multi-Skill Spammer Disabled")
-		return 
-	end
-
-	print("[+] Multi-Skill Spammer Started")
+	if not isSkillEnabled then return end
 
 	skillThread = task.spawn(function()
-		task.wait(0.2) -- Small initial delay so clicking the UI toggle finishes cleanly
-
+		task.wait(0.2)
 		while isSkillEnabled do
-			-- Cycle through Z, X, C, V, G
 			for _, key in ipairs(SKILL_KEYS) do
 				if not isSkillEnabled then break end
 				pressKey(key)
-				task.wait(0.05) -- Delay between each keypress
+				task.wait(0.05)
 			end
-
-			task.wait(0.2) -- Delay before repeating the rotation
+			task.wait(0.2)
 		end
 	end)
 end)
 
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-
--- List of active codes
+---------------------------------------------------------
+-- TAB 3: LOBBY (Code Redeemer)
+---------------------------------------------------------
 local codesList = {
 	"Anniversary!",
 	"ScytheEvolution!",
@@ -185,19 +145,14 @@ local codesList = {
 	"VeryHotHotfixes"
 }
 
--- Add button to your UI Tab
 Tabs.Lobby:AddButton({
 	Title = "Redeem All Codes",
 	Description = "Automatically redeems all active promo codes",
 	Callback = function()
-		-- Run in a thread so it doesn't freeze the UI
 		task.spawn(function()
-			print("[+] Starting code redemption process...")
-
 			local playerGui = player:WaitForChild("PlayerGui")
 
 			for i, code in ipairs(codesList) do
-				-- Safely find the TextBox path without breaking if the UI is hidden
 				local guiFolder = playerGui:FindFirstChild("GUI")
 				local codesFrame = guiFolder and guiFolder:FindFirstChild("Codes")
 				local content = codesFrame and codesFrame:FindFirstChild("Content")
@@ -205,25 +160,18 @@ Tabs.Lobby:AddButton({
 				local textBox = searchBar and searchBar:FindFirstChild("TextBox")
 
 				if textBox and textBox:IsA("TextBox") then
-					-- Step 1: Set the text to the code
 					textBox.Text = code
 					task.wait(0.1)
-
-					-- Step 2: Focus and Release Focus with 'true' (Simulates pressing Enter to submit)
 					textBox:CaptureFocus()
 					task.wait(0.05)
 					textBox:ReleaseFocus(true)
-
 					print(string.format("[%d/%d] Redeemed: %s", i, #codesList, code))
 				else
-					warn("[-] Codes UI not found! Please open the Codes menu in-game first.")
+					warn("[-] Codes UI not found! Open the Codes window in the Lobby first.")
 				end
 
-				-- Step 3: Wait 1.5 seconds before processing the next code
 				task.wait(1.5)
 			end
-
-			print("[+] Finished redeeming all codes!")
 		end)
 	end
 })
