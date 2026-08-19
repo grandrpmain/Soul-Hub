@@ -118,7 +118,7 @@ AutoFarmToggle:OnChanged(function(Value)
 end)
 
 ---------------------------------------------------------
--- 2. AUTOMATIC SKILL SPAMMER
+-- 2. AUTOMATIC SKILL SPAMMER (FAST PARALLEL BURST)
 ---------------------------------------------------------
 local isSkillEnabled = false
 local skillThread = nil
@@ -132,14 +132,14 @@ local SKILL_KEYS = {
 	Enum.KeyCode.G
 }
 
--- Helper function to simulate keypresses
+-- Fast helper function to simulate keypresses
 local function pressKey(keyCode)
 	VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-	task.wait(0.03)
+	task.wait(0.02)
 	VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
 end
 
-local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Multi-Skill Spammer", Default = false })
+local SkillToggle = Tabs.Main:AddToggle("Skill", { Title = "Fast Burst Skill Spammer", Default = false })
 
 SkillToggle:OnChanged(function(Value)
 	isSkillEnabled = Value
@@ -151,25 +151,24 @@ SkillToggle:OnChanged(function(Value)
 	end
 
 	if not isSkillEnabled then 
-		print("[-] Multi-Skill Spammer Disabled")
+		print("[-] Fast Skill Spammer Disabled")
 		return 
-
 	end
 
-	print("[+] Multi-Skill Spammer Started")
+	print("[+] Fast Skill Spammer Started")
 
 	skillThread = task.spawn(function()
-		task.wait(0.2)
+		task.wait(0.1) -- Initial UI delay
 
 		while isSkillEnabled do
-			-- Cycle through Z, X, C, V, G
+			-- Fires ALL skill keys simultaneously in parallel threads
 			for _, key in ipairs(SKILL_KEYS) do
-				if not isSkillEnabled then break end
-				pressKey(key)
-				task.wait(0.05)
+				task.spawn(function()
+					pressKey(key)
+				end)
 			end
 
-			task.wait(0.2)
+			task.wait(0.05) -- Delay between burst cycles
 		end
 	end)
 end)
@@ -336,74 +335,57 @@ FlyToggle:OnChanged(function(Value)
 end)
 
 ---------------------------------------------------------
--- RAID BOSS SAFE HOVER TOGGLE
+-- ULTRA-FAST PARALLEL SKILL SPAMMER
 ---------------------------------------------------------
-local isRaidFlying = false
-local raidThread = nil
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
--- Helper function to automatically locate any non-player boss model
-local function findRaidBoss()
-	local localChar = player.Character
+local isSkillEnabled = false
+local skillThread = nil
 
-	-- 1. Check if the game puts raid bosses in a specific workspace folder
-	local raidFolder = workspace:FindFirstChild("Raid") 
-		or workspace:FindFirstChild("Boss") 
-		or workspace:FindFirstChild("Enemies") 
-		or workspace:FindFirstChild("Bosses")
+local SKILL_KEYS = {
+	Enum.KeyCode.Z,
+	Enum.KeyCode.X,
+	Enum.KeyCode.C,
+	Enum.KeyCode.V,
+	Enum.KeyCode.G
+}
 
-	local searchTargets = raidFolder and raidFolder:GetDescendants() or workspace:GetChildren()
-
-	for _, obj in ipairs(searchTargets) do
-		if obj:IsA("Model") and obj ~= localChar then
-			local humanoid = obj:FindFirstChildOfClass("Humanoid")
-			
-			-- Check if it has health and is NOT a player character
-			if humanoid and humanoid.Health > 0 and not Players:GetPlayerFromCharacter(obj) then
-				return obj
-			end
-		end
-	end
-
-	return nil
+-- Fast key simulator
+local function pressKey(keyCode)
+	VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+	task.wait(0.02)
+	VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
 end
 
-local RaidFlyToggle = Tabs.Raid:AddToggle("RaidFly", { Title = "Raid Boss Safe Hover", Default = false })
+local RaidToggle = Tabs.Raid:AddToggle("Skill", { Title = "Raid Fast Burst Skill Spammer", Default = false })
 
-RaidFlyToggle:OnChanged(function(Value)
-	isRaidFlying = Value
+RaidToggle:OnChanged(function(Value)
+	isSkillEnabled = Value
 
-	if raidThread then
-		task.cancel(raidThread)
-		raidThread = nil
+	if skillThread then
+		task.cancel(skillThread)
+		skillThread = nil
 	end
 
-	if not isRaidFlying then 
-		print("[-] Raid Boss Hover Disabled")
+	if not isSkillEnabled then 
+		print("[-] Skill Spammer Disabled")
 		return 
 	end
 
-	print("[+] Raid Boss Hover Started")
+	print("[+] Fast Skill Spammer Started")
 
-	raidThread = task.spawn(function()
-		while isRaidFlying do
-			local character = player.Character or player.CharacterAdded:Wait()
-			local hrp = character:FindFirstChild("HumanoidRootPart")
+	skillThread = task.spawn(function()
+		task.wait(0.1)
 
-			if hrp then
-				local boss = findRaidBoss()
-
-				if boss then
-					-- Stop physics forces so you don't fall
-					hrp.AssemblyLinearVelocity = Vector3.zero
-					hrp.AssemblyAngularVelocity = Vector3.zero
-
-					-- Takes the boss's center CFrame and offsets 12 studs straight UP (+Y)
-					local safeHoverCFrame = boss:GetPivot() * CFrame.new(0, 18, 0)
-					character:PivotTo(safeHoverCFrame)
-				end
+		while isSkillEnabled do
+			-- Fires all 5 keys simultaneously in separate threads
+			for _, key in ipairs(SKILL_KEYS) do
+				task.spawn(function()
+					pressKey(key)
+				end)
 			end
 
-			task.wait(0.1) -- Fast loop rate to stick above the boss as it moves
+			task.wait(0.05) -- Adjust speed here if the game drops inputs
 		end
 	end)
 end)
