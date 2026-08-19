@@ -12,8 +12,8 @@ local Window = Fluent:CreateWindow({
 
 -- Create Tabs
 local Tabs = {
-    Main = Window:AddTab({ Title = "Auto Farm", Icon = "rbxassetid://10723407068" }),
-    Combat = Window:AddTab({ Title = "Combat / Aura", Icon = "rbxassetid://10723345802" }),
+    Main = Window:AddTab({ Title = "Main", Icon = "rbxassetid://10723407068" }),
+    Combat = Window:AddTab({ Title = "Testing", Icon = "rbxassetid://10723345802" }),
     Lobby = Window:AddTab({ Title = "Lobby", Icon = "rbxassetid://10723345802" }),
     Settings = Window:AddTab({ Title = "Settings", Icon = "settings" })
 }
